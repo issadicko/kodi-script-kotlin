@@ -4,7 +4,7 @@ Interpréteur KodiScript v1.2 pour Kotlin/Spring Boot.
 
 ## 🎯 Pourquoi KodiScript ?
 
-Vous avez déjà eu besoin d'exécuter du code dynamiquement dans votre application ? De laisser vos utilisateurs définir des règles métier sans recompiler tout le projet ? C'est exactement pour ça que KodiScript existe.
+Vous avez déjà eu besoin d'exécuter du code dynamiquement dans votre application ? De laisser vos utilisateurs (admins) définir des règles métier sans recompiler tout le projet ? C'est exactement pour ça que KodiScript existe.
 
 **KodiScript** est un langage de script minimaliste, pensé pour être :
 
