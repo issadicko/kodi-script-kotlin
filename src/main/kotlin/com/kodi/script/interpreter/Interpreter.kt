@@ -27,6 +27,9 @@ class Environment(private val outer: Environment? = null) {
     fun getOutput(): List<String> = output
 }
 
+/** Wrapper to signal early return from evaluation. */
+class ReturnValue(val value: Any?)
+
 /** Interpreter evaluates AST nodes. */
 class Interpreter(
         private val env: Environment = Environment(),
@@ -45,6 +48,10 @@ class Interpreter(
         var result: Any? = null
         for (stmt in program.statements) {
             result = evalStatement(stmt)
+            // Unwrap return values at top level
+            if (result is ReturnValue) {
+                return result.value
+            }
         }
         return result
     }
@@ -66,6 +73,10 @@ class Interpreter(
             is ExpressionStatement -> evalExpression(stmt.expression)
             is IfStatement -> evalIfStatement(stmt)
             is BlockStatement -> evalBlockStatement(stmt)
+            is ReturnStatement -> {
+                val value = stmt.value?.let { evalExpression(it) }
+                ReturnValue(value)
+            }
         }
     }
 
@@ -82,6 +93,10 @@ class Interpreter(
         var result: Any? = null
         for (stmt in block.statements) {
             result = evalStatement(stmt)
+            // Propagate return values up the call stack
+            if (result is ReturnValue) {
+                return result
+            }
         }
         return result
     }

@@ -200,4 +200,144 @@ class KodiScriptTest {
     fun `test eval throws on error`() {
         assertThrows(KodiScriptException::class.java) { KodiScript.eval("undefinedVariable") }
     }
+
+    @Test
+    fun `test return statement`() {
+        val result = KodiScript.run("return 42")
+        assertFalse(result.hasErrors)
+        assertEquals(42.0, result.value)
+    }
+
+    @Test
+    fun `test return with expression`() {
+        val result = KodiScript.run("return 10 + 20")
+        assertFalse(result.hasErrors)
+        assertEquals(30.0, result.value)
+    }
+
+    @Test
+    fun `test return stops execution`() {
+        val result =
+                KodiScript.run(
+                        """
+            let x = 10
+            return x * 2
+            let y = 100
+            y
+        """.trimIndent()
+                )
+        assertFalse(result.hasErrors)
+        assertEquals(20.0, result.value)
+    }
+
+    @Test
+    fun `test return in if block`() {
+        val result =
+                KodiScript.run(
+                        """
+            let x = 5
+            if (x > 3) {
+                return "big"
+            }
+            return "small"
+        """.trimIndent()
+                )
+        assertFalse(result.hasErrors)
+        assertEquals("big", result.value)
+    }
+
+    @Test
+    fun `test math functions`() {
+        assertEquals(5.0, KodiScript.run("abs(-5)").value)
+        assertEquals(3.0, KodiScript.run("floor(3.7)").value)
+        assertEquals(4.0, KodiScript.run("ceil(3.2)").value)
+        assertEquals(4.0, KodiScript.run("round(3.5)").value)
+        assertEquals(8.0, KodiScript.run("pow(2, 3)").value)
+        assertEquals(4.0, KodiScript.run("sqrt(16)").value)
+    }
+
+    @Test
+    fun `test min max functions`() {
+        assertEquals(1.0, KodiScript.run("min(5, 3, 1, 8)").value)
+        assertEquals(8.0, KodiScript.run("max(5, 3, 1, 8)").value)
+    }
+
+    @Test
+    fun `test string functions`() {
+        assertEquals("HELLO", KodiScript.run("""toUpperCase("hello")""").value)
+        assertEquals("hello", KodiScript.run("""toLowerCase("HELLO")""").value)
+        assertEquals("hello", KodiScript.run("""trim("  hello  ")""").value)
+        assertEquals(
+                "hello kodi",
+                KodiScript.run("""replace("hello world", "world", "kodi")""").value
+        )
+        assertEquals(true, KodiScript.run("""contains("hello world", "world")""").value)
+        assertEquals(true, KodiScript.run("""startsWith("hello world", "hello")""").value)
+        assertEquals(true, KodiScript.run("""endsWith("hello world", "world")""").value)
+        assertEquals(6.0, KodiScript.run("""indexOf("hello world", "world")""").value)
+    }
+
+    @Test
+    fun `test crypto functions`() {
+        assertEquals("5d41402abc4b2a76b9719d911017c592", KodiScript.run("""md5("hello")""").value)
+        assertEquals(
+                "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d",
+                KodiScript.run("""sha1("hello")""").value
+        )
+        assertEquals(
+                "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+                KodiScript.run("""sha256("hello")""").value
+        )
+    }
+
+    @Test
+    fun `test random functions`() {
+        val randomResult = KodiScript.run("random()")
+        assertFalse(randomResult.hasErrors)
+        val value = randomResult.value as Double
+        assertTrue(value >= 0.0 && value < 1.0)
+
+        val uuidResult = KodiScript.run("randomUUID()")
+        assertFalse(uuidResult.hasErrors)
+        assertEquals(36, (uuidResult.value as String).length)
+    }
+
+    @Test
+    fun `test type check functions`() {
+        assertEquals(true, KodiScript.run("isNumber(42)").value)
+        assertEquals(false, KodiScript.run("""isNumber("42")""").value)
+        assertEquals(true, KodiScript.run("""isString("hello")""").value)
+        assertEquals(true, KodiScript.run("isBool(true)").value)
+        assertEquals("number", KodiScript.run("typeOf(42)").value)
+        assertEquals("string", KodiScript.run("""typeOf("hello")""").value)
+        assertEquals("null", KodiScript.run("typeOf(null)").value)
+    }
+
+    @Test
+    fun `test array functions`() {
+        val vars =
+                mapOf(
+                        "numbers" to listOf(3.0, 1.0, 4.0, 1.0, 5.0),
+                        "users" to
+                                listOf(
+                                        mapOf("name" to "Charlie", "age" to 30.0),
+                                        mapOf("name" to "Alice", "age" to 25.0),
+                                        mapOf("name" to "Bob", "age" to 35.0)
+                                )
+                )
+
+        // sort
+        val sortResult = KodiScript.run("sort(numbers)", vars)
+        assertFalse(sortResult.hasErrors)
+        @Suppress("UNCHECKED_CAST") val sorted = sortResult.value as List<Double>
+        assertEquals(1.0, sorted.first())
+        assertEquals(5.0, sorted.last())
+
+        // size
+        assertEquals(5.0, KodiScript.run("size(numbers)", vars).value)
+
+        // first/last
+        assertEquals(3.0, KodiScript.run("first(numbers)", vars).value)
+        assertEquals(5.0, KodiScript.run("last(numbers)", vars).value)
+    }
 }

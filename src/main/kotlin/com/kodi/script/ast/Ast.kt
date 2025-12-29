@@ -51,6 +51,11 @@ data class BlockStatement(
     override fun tokenLiteral(): String = token.literal
 }
 
+/** Return statement: return [expr] */
+data class ReturnStatement(val token: Token, val value: Expression? = null) : Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Variable identifier. */
 data class Identifier(val token: Token, val value: String) : Expression {
     override fun tokenLiteral(): String = token.literal

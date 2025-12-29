@@ -107,11 +107,29 @@ class Parser(private val lexer: Lexer) {
         return when (curToken.type) {
             TokenType.LET -> parseVarDecl()
             TokenType.IF -> parseIfStatement()
+            TokenType.RETURN -> parseReturnStatement()
             TokenType.IDENT -> {
                 if (peekTokenIs(TokenType.ASSIGN)) parseAssignment() else parseExpressionStatement()
             }
             else -> parseExpressionStatement()
         }
+    }
+
+    private fun parseReturnStatement(): ReturnStatement {
+        val token = curToken
+
+        // Check if there's an expression after return
+        if (peekTokenIs(TokenType.SEMICOLON) ||
+                        peekTokenIs(TokenType.NEWLINE) ||
+                        peekTokenIs(TokenType.EOF) ||
+                        peekTokenIs(TokenType.RBRACE)
+        ) {
+            return ReturnStatement(token, null)
+        }
+
+        nextToken()
+        val value = parseExpression(LOWEST)
+        return ReturnStatement(token, value)
     }
 
     private fun parseVarDecl(): VarDecl? {
