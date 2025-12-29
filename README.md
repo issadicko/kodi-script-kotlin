@@ -2,6 +2,19 @@
 
 Interpréteur KodiScript v1.2 pour Kotlin/Spring Boot.
 
+## 🎯 Pourquoi KodiScript ?
+
+Vous avez déjà eu besoin d'exécuter du code dynamiquement dans votre application ? De laisser vos utilisateurs définir des règles métier sans recompiler tout le projet ? C'est exactement pour ça que KodiScript existe.
+
+**KodiScript** est un langage de script minimaliste, pensé pour être :
+
+- **Simple à apprendre** — Une syntaxe épurée, proche du JavaScript, que n'importe qui peut comprendre en quelques minutes
+- **Léger** — Pas de dépendances lourdes, juste l'essentiel pour faire le travail
+- **Sécurisé** — Exécution sandboxée, vos utilisateurs peuvent écrire des scripts sans risquer de casser votre système
+- **Facile à intégrer** — Quelques lignes de code suffisent pour l'embarquer dans votre projet Kotlin/Spring Boot
+
+Imaginez : un admin qui configure des règles de validation, un workflow qui s'adapte selon le contexte, ou des transformations de données à la volée. Tout ça devient possible sans toucher à votre code source.
+
 ## Installation
 
 ### Gradle Kotlin DSL
