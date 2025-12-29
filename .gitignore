@@ -1,0 +1,14 @@
+# Gradle
+build/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+
+# Local properties
+local.properties
+gradle.properties
+
+# Kotlin
+*.class

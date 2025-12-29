@@ -8,14 +8,14 @@ Interpréteur KodiScript v1.2 pour Kotlin/Spring Boot.
 
 ```kotlin
 dependencies {
-    implementation("com.kodi:kodi-script:1.2.0")
+    implementation("com.kodi:kodi-script:1.2.1")
 }
 ```
 
 ### Gradle Groovy
 
 ```groovy
-implementation 'com.kodi:kodi-script:1.2.0'
+implementation 'com.kodi:kodi-script:1.2.1'
 ```
 
 ## Utilisation
