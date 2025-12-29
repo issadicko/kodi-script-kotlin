@@ -33,7 +33,7 @@ class ReturnValue(val value: Any?)
 /** Interpreter evaluates AST nodes. */
 class Interpreter(
         private val env: Environment = Environment(),
-        private val natives: NativeFunctions = NativeFunctions()
+        private val natives: NativeFunctions = NativeFunctions.shared
 ) {
 
     companion object {

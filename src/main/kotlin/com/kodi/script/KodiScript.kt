@@ -76,9 +76,15 @@ private constructor(
             return ScriptResult(errors = parser.errors())
         }
 
-        // Natives with custom functions
-        val natives = NativeFunctions()
-        customFunctions.forEach { (name, fn) -> natives.register(name, fn) }
+        // Use singleton for built-ins, create copy only if custom functions are registered
+        val natives =
+                if (customFunctions.isEmpty()) {
+                    NativeFunctions.shared
+                } else {
+                    NativeFunctions.withBuiltins().apply {
+                        customFunctions.forEach { (name, fn) -> register(name, fn) }
+                    }
+                }
 
         // Interpreter with environment and natives
         val interpreter =

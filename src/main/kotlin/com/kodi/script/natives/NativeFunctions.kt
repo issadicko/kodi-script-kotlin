@@ -11,17 +11,28 @@ import kotlin.random.Random
 typealias NativeFunc = (List<Any?>) -> Any?
 
 /** Registry of native functions for KodiScript. */
-class NativeFunctions {
+class NativeFunctions private constructor() {
     private val functions = mutableMapOf<String, NativeFunc>()
 
-    init {
-        registerBuiltins()
+    companion object {
+        /** Shared singleton instance for built-in functions. */
+        val shared: NativeFunctions by lazy { NativeFunctions().apply { registerBuiltins() } }
+
+        /** Create a new instance with built-in functions (for custom functions). */
+        fun withBuiltins(): NativeFunctions {
+            return NativeFunctions().apply { copyFrom(shared) }
+        }
     }
 
     fun get(name: String): NativeFunc? = functions[name]
 
     fun register(name: String, fn: NativeFunc) {
         functions[name] = fn
+    }
+
+    /** Copy all functions from another instance. */
+    private fun copyFrom(other: NativeFunctions) {
+        functions.putAll(other.functions)
     }
 
     private fun registerBuiltins() {
