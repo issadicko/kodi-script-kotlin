@@ -77,6 +77,7 @@ class Interpreter(
                 val value = stmt.value?.let { evalExpression(it) }
                 ReturnValue(value)
             }
+            is ForStatement -> evalForStatement(stmt)
         }
     }
 
@@ -87,6 +88,38 @@ class Interpreter(
         } else {
             stmt.alternative?.let { evalBlockStatement(it) }
         }
+    }
+
+    private fun evalForStatement(stmt: ForStatement): Any? {
+        // Evaluate the iterable
+        val iterableVal = evalExpression(stmt.iterable)
+
+        // Must be a List
+        val arr =
+                iterableVal as? List<*>
+                        ?: throw RuntimeException(
+                                "for-in requires an array, got ${iterableVal?.javaClass?.simpleName}"
+                        )
+
+        var result: Any? = null
+        val varName = stmt.variable.value
+
+        for (item in arr) {
+            // Set loop variable
+            env.set(varName, item)
+
+            // Execute body
+            val value = evalBlockStatement(stmt.body)
+
+            // Check for return
+            if (value is ReturnValue) {
+                return value
+            }
+
+            result = value
+        }
+
+        return result
     }
 
     private fun evalBlockStatement(block: BlockStatement): Any? {

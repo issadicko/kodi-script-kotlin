@@ -56,6 +56,16 @@ data class ReturnStatement(val token: Token, val value: Expression? = null) : St
     override fun tokenLiteral(): String = token.literal
 }
 
+/** For statement: for (variable in iterable) { body } */
+data class ForStatement(
+        val token: Token,
+        val variable: Identifier,
+        val iterable: Expression,
+        val body: BlockStatement
+) : Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Variable identifier. */
 data class Identifier(val token: Token, val value: String) : Expression {
     override fun tokenLiteral(): String = token.literal

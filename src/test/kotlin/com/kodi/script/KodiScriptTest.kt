@@ -340,4 +340,44 @@ class KodiScriptTest {
         assertEquals(3.0, KodiScript.run("first(numbers)", vars).value)
         assertEquals(5.0, KodiScript.run("last(numbers)", vars).value)
     }
+
+    @Test
+    fun `test for loop`() {
+        val vars = mapOf("numbers" to listOf(1.0, 2.0, 3.0, 4.0, 5.0))
+
+        // Basic for loop with sum
+        val sumResult =
+                KodiScript.run(
+                        """
+let sum = 0
+for (n in numbers) {
+    sum = sum + n
+}
+sum
+""",
+                        vars
+                )
+        assertFalse(sumResult.hasErrors)
+        assertEquals(15.0, sumResult.value)
+
+        // For loop with print
+        val printResult = KodiScript.run("""
+for (item in numbers) {
+    print(item)
+}
+""", vars)
+        assertFalse(printResult.hasErrors)
+        assertEquals(5, printResult.output.size)
+
+        // For loop with objects
+        val users = mapOf("users" to listOf(mapOf("name" to "Alice"), mapOf("name" to "Bob")))
+        val objResult = KodiScript.run("""
+for (user in users) {
+    print(user.name)
+}
+""", users)
+        assertFalse(objResult.hasErrors)
+        assertEquals(2, objResult.output.size)
+        assertEquals("Alice", objResult.output[0])
+    }
 }
