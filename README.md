@@ -250,3 +250,11 @@ let b = 2;  // Les deux sont valides
 # ou
 ./gradlew publishToMavenCentral
 ```
+
+## Other Implementations
+
+| Language | Package |
+|----------|---------|  
+| **Go** | [pkg.go.dev](https://pkg.go.dev/github.com/issadicko/kodi-script-go) |
+| **Dart** | [pub.dev](https://pub.dev/packages/kodi_script) |
+| **TypeScript** | [npm](https://www.npmjs.com/package/@issadicko/kodi-script) |
