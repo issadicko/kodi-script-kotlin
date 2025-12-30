@@ -1,6 +1,6 @@
 # KodiScript Kotlin SDK
 
-Interpréteur KodiScript v1.2 pour Kotlin/Spring Boot.
+Interpréteur KodiScript v1.2.2 pour Kotlin/Spring Boot.
 
 ## 🎯 Pourquoi KodiScript ?
 
@@ -21,14 +21,14 @@ Imaginez : un admin qui configure des règles de validation, un workflow qui s'a
 
 ```kotlin
 dependencies {
-    implementation("com.kodi:kodi-script:1.2.1")
+    implementation("com.kodi:kodi-script:1.2.2")
 }
 ```
 
 ### Gradle Groovy
 
 ```groovy
-implementation 'com.kodi:kodi-script:1.2.1'
+implementation 'com.kodi:kodi-script:1.2.2'
 ```
 
 ## Utilisation
