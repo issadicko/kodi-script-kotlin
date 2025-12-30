@@ -1,0 +1,26 @@
+name: KodiScript CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-kotlin:
+    name: Test Kotlin SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./kodi-kotlin
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    - name: Test with Gradle
+      run: ./gradlew test --no-daemon

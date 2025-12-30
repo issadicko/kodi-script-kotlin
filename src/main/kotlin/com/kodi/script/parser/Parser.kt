@@ -27,6 +27,7 @@ class Parser(private val lexer: Lexer) {
         prefixParseFns[TokenType.LPAREN] = ::parseGroupedExpression
         prefixParseFns[TokenType.LBRACKET] = ::parseArrayLiteral
         prefixParseFns[TokenType.LBRACE] = ::parseObjectLiteral
+        prefixParseFns[TokenType.FN] = ::parseFunctionLiteral
 
         // Register infix parse functions
         infixParseFns[TokenType.PLUS] = ::parseInfixExpression
@@ -401,6 +402,37 @@ class Parser(private val lexer: Lexer) {
         if (!expectPeek(TokenType.IDENT)) return null
         val property = Identifier(curToken, curToken.literal)
         return SafeAccessExpr(token, left, property)
+    }
+
+    private fun parseFunctionLiteral(): Expression? {
+        val token = curToken
+        if (!expectPeek(TokenType.LPAREN)) return null
+        val parameters = parseFunctionParameters() ?: return null
+        if (!expectPeek(TokenType.LBRACE)) return null
+        val body = parseBlockStatement()
+        return FunctionLiteral(token, parameters, body)
+    }
+
+    private fun parseFunctionParameters(): List<Identifier>? {
+        val identifiers = mutableListOf<Identifier>()
+
+        if (peekTokenIs(TokenType.RPAREN)) {
+            nextToken()
+            return identifiers
+        }
+
+        nextToken()
+        identifiers.add(Identifier(curToken, curToken.literal))
+
+        while (peekTokenIs(TokenType.COMMA)) {
+            nextToken()
+            nextToken()
+            identifiers.add(Identifier(curToken, curToken.literal))
+        }
+
+        if (!expectPeek(TokenType.RPAREN)) return null
+
+        return identifiers
     }
 
     private fun parseCallExpression(function: Expression): Expression? {

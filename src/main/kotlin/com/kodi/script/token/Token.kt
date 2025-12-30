@@ -57,11 +57,12 @@ enum class TokenType {
         NULL,
         RETURN,
         FOR,
-        IN;
+        IN,
+        FN;
 
         /** Returns true if this token type can end a statement (for ASI). */
         fun canEndStatement(): Boolean =
-                this in setOf(IDENT, NUMBER, STRING, TRUE, FALSE, NULL, RPAREN, RBRACE)
+                this in setOf(IDENT, NUMBER, STRING, TRUE, FALSE, NULL, RPAREN, RBRACE, RBRACKET)
 
         /** Returns true if this token type indicates statement continuation. */
         fun isOperatorContinuation(): Boolean =
@@ -99,7 +100,8 @@ data class Token(val type: TokenType, val literal: String, val line: Int = 1, va
                                 "null" to TokenType.NULL,
                                 "return" to TokenType.RETURN,
                                 "for" to TokenType.FOR,
-                                "in" to TokenType.IN
+                                "in" to TokenType.IN,
+                                "fn" to TokenType.FN
                         )
 
                 /** Looks up an identifier to check if it's a keyword. */

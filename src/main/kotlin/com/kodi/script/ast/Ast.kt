@@ -138,6 +138,15 @@ data class PropertyAccessExpr(val token: Token, val obj: Expression, val propert
     override fun tokenLiteral(): String = token.literal
 }
 
+/** Function literal: fn(x, y) { ... } */
+data class FunctionLiteral(
+        val token: Token,
+        val parameters: List<Identifier>,
+        val body: BlockStatement
+) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Function call: func(args...) */
 data class CallExpr(val token: Token, val function: Expression, val arguments: List<Expression>) :
         Expression {

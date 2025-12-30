@@ -30,9 +30,19 @@ class Environment(private val outer: Environment? = null) {
 /** Wrapper to signal early return from evaluation. */
 class ReturnValue(val value: Any?)
 
+/** Function value (user defined). */
+data class FunctionValue(
+        val parameters: List<Identifier>,
+        val body: BlockStatement,
+        val env: Environment
+)
+
+/** Native function wrapper. */
+data class NativeFunctionValue(val fn: (List<Any?>) -> Any?)
+
 /** Interpreter evaluates AST nodes. */
 class Interpreter(
-        private val env: Environment = Environment(),
+        private var env: Environment = Environment(),
         private val natives: NativeFunctions = NativeFunctions.shared
 ) {
 
@@ -142,9 +152,14 @@ class Interpreter(
             is NullLiteral -> null
             is Identifier -> {
                 val (value, found) = env.get(expr.value)
-                if (!found) throw RuntimeException("undefined variable: ${expr.value}")
-                value
+                if (found) return value
+
+                val native = natives.get(expr.value)
+                if (native != null) return NativeFunctionValue(native)
+
+                throw RuntimeException("undefined variable: ${expr.value}")
             }
+            is FunctionLiteral -> FunctionValue(expr.parameters, expr.body, env)
             is BinaryExpr -> evalBinaryExpr(expr)
             is UnaryExpr -> evalUnaryExpr(expr)
             is SafeAccessExpr -> evalSafeAccess(expr)
@@ -270,23 +285,41 @@ class Interpreter(
 
     private fun evalCallExpr(expr: CallExpr): Any? {
         val funcExpr = expr.function
-        if (funcExpr !is Identifier) {
-            throw RuntimeException("expected function identifier")
-        }
-
-        val args = expr.arguments.map { evalExpression(it) }
-
-        // Handle print specially
-        if (funcExpr.value == "print") {
+        // Special print handling
+        if (funcExpr is Identifier && funcExpr.value == "print") {
+            val args = expr.arguments.map { evalExpression(it) }
             args.forEach { env.addOutput(it?.toString() ?: "null") }
             return null
         }
 
-        val fn =
-                natives.get(funcExpr.value)
-                        ?: throw RuntimeException("undefined function: ${funcExpr.value}")
+        val function = evalExpression(funcExpr)
+        val args = expr.arguments.map { evalExpression(it) }
 
-        return fn(args)
+        return applyFunction(function, args)
+    }
+
+    private fun applyFunction(fn: Any?, args: List<Any?>): Any? {
+        return when (fn) {
+            is FunctionValue -> {
+                val extendedEnv = Environment(fn.env)
+                for ((idx, param) in fn.parameters.withIndex()) {
+                    if (idx < args.size) {
+                        extendedEnv.set(param.value, args[idx])
+                    }
+                }
+
+                val previousEnv = this.env
+                this.env = extendedEnv
+                try {
+                    val result = evalBlockStatement(fn.body)
+                    if (result is ReturnValue) result.value else result
+                } finally {
+                    this.env = previousEnv
+                }
+            }
+            is NativeFunctionValue -> fn.fn(args)
+            else -> throw RuntimeException("not a function: ${fn?.javaClass?.simpleName}")
+        }
     }
 
     private fun isTruthy(value: Any?): Boolean {

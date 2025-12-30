@@ -471,4 +471,74 @@ big
         assertFalse(nestedResult.hasErrors)
         assertEquals("Alice", nestedResult.value)
     }
+
+    @Test
+    fun `test user functions`() {
+        // 1. Basic function call with implicit return
+        val basicResult =
+                KodiScript.run(
+                        """
+            let add = fn(x, y) { x + y };
+            add(5, 5)
+        """,
+                        emptyMap()
+                )
+        assertFalse(basicResult.hasErrors)
+        assertEquals(10.0, basicResult.value)
+
+        // 2. Explicit return
+        val explicitResult =
+                KodiScript.run(
+                        """
+            let add = fn(x, y) { return x + y; };
+            add(10, 10)
+        """,
+                        emptyMap()
+                )
+        assertFalse(explicitResult.hasErrors)
+        assertEquals(20.0, explicitResult.value)
+
+        // 3. Closure
+        val closureResult =
+                KodiScript.run(
+                        """
+            let newAdder = fn(x) {
+                fn(y) { x + y }
+            };
+            let addTwo = newAdder(2);
+            addTwo(2)
+        """,
+                        emptyMap()
+                )
+        assertFalse(closureResult.hasErrors)
+        assertEquals(4.0, closureResult.value)
+
+        // 4. Higher order
+        val higherOrderResult =
+                KodiScript.run(
+                        """
+            let apply = fn(f, x) { f(x) };
+            let double = fn(x) { x * 2 };
+            apply(double, 5)
+        """,
+                        emptyMap()
+                )
+        assertFalse(higherOrderResult.hasErrors)
+        assertEquals(10.0, higherOrderResult.value)
+
+        // 5. Recursion
+        val recursionResult =
+                KodiScript.run(
+                        """
+            let fact = fn(n) {
+                if (n == 0) { return 1 }
+                return n * fact(n - 1)
+            };
+            fact(5)
+        """,
+                        emptyMap()
+                )
+        assertFalse(recursionResult.hasErrors)
+        assertEquals(120.0, recursionResult.value)
+    }
 }
