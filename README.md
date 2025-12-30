@@ -1,6 +1,8 @@
 # KodiScript Kotlin SDK
 
-Interpréteur KodiScript v1.2.2 pour Kotlin/Spring Boot.
+Interpréteur KodiScript v0.0.1 pour Kotlin/Spring Boot.
+
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.issadicko/kodi-script)](https://central.sonatype.com/artifact/io.github.issadicko/kodi-script)
 
 ## 🎯 Pourquoi KodiScript ?
 
@@ -21,14 +23,24 @@ Imaginez : un admin qui configure des règles de validation, un workflow qui s'a
 
 ```kotlin
 dependencies {
-    implementation("com.kodi:kodi-script:1.2.2")
+    implementation("io.github.issadicko:kodi-script:0.0.1")
 }
 ```
 
 ### Gradle Groovy
 
 ```groovy
-implementation 'com.kodi:kodi-script:1.2.2'
+implementation 'io.github.issadicko:kodi-script:0.0.1'
+```
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>io.github.issadicko</groupId>
+    <artifactId>kodi-script</artifactId>
+    <version>0.0.1</version>
+</dependency>
 ```
 
 ## Utilisation
@@ -229,4 +241,12 @@ let b = 2;  // Les deux sont valides
 
 ```bash
 ./gradlew publishToMavenLocal
+```
+
+## Publication Maven Central
+
+```bash
+./publish.sh
+# ou
+./gradlew publishToMavenCentral
 ```

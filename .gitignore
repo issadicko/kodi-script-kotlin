@@ -12,3 +12,6 @@ gradle.properties
 
 # Kotlin
 *.class
+
+# Maven Central secrets (DO NOT COMMIT)
+maven-central/
