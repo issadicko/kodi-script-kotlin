@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.kodi"
-version = "1.2.1"
+version = "1.2.2"
 
 repositories {
     mavenCentral()
@@ -36,7 +36,7 @@ publishing {
             
             pom {
                 name.set("KodiScript")
-                description.set("KodiScript v1.2 interpreter for Kotlin/Spring Boot")
+                description.set("KodiScript v1.2.2 interpreter for Kotlin/Spring Boot")
                 url.set("https://github.com/issadicko/kodi-script-kotlin")
                 
                 licenses {
