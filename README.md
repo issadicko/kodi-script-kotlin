@@ -4,6 +4,8 @@ Interpréteur KodiScript v0.0.1 pour Kotlin/Spring Boot.
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.issadicko/kodi-script)](https://central.sonatype.com/artifact/io.github.issadicko/kodi-script)
 
+📖 **Documentation complète** : [docs-kodiscript.dickode.net](https://docs-kodiscript.dickode.net/)
+
 ## 🎯 Pourquoi KodiScript ?
 
 Vous avez déjà eu besoin d'exécuter du code dynamiquement dans votre application ? De laisser vos utilisateurs (admins) définir des règles métier sans recompiler tout le projet ? C'est exactement pour ça que KodiScript existe.
@@ -92,6 +94,63 @@ val result = KodiScript.builder("""
     }
     .execute()
 ```
+
+## 🔌 Extensibilité
+
+KodiScript est conçu pour être **extensible**. Vous pouvez enrichir le langage en ajoutant vos propres fonctions natives, permettant aux scripts d'interagir avec votre système.
+
+### Ajouter des fonctions métier
+
+```kotlin
+val result = KodiScript.builder("""
+    let user = fetchUser(123)
+    let discount = calculateDiscount(user.tier, 100)
+    print("Discount: " + discount + "%")
+""")
+    .registerFunction("fetchUser") { args ->
+        // Appel à votre base de données
+        mapOf("id" to args[0], "name" to "Alice", "tier" to "gold")
+    }
+    .registerFunction("calculateDiscount") { args ->
+        val tier = args[0] as String
+        val amount = args[1] as Number
+        when (tier) {
+            "gold" -> 20
+            "silver" -> 10
+            else -> 5
+        }
+    }
+    .execute()
+```
+
+### Intégration avec vos services
+
+```kotlin
+@Service
+class ScriptExecutor(
+    private val userService: UserService,
+    private val notificationService: NotificationService
+) {
+    fun execute(script: String, context: Map<String, Any?>): ScriptResult {
+        return KodiScript.builder(script)
+            .withVariables(context)
+            .registerFunction("sendEmail") { args ->
+                notificationService.sendEmail(
+                    to = args[0] as String,
+                    subject = args[1] as String,
+                    body = args[2] as String
+                )
+                true
+            }
+            .registerFunction("getUserById") { args ->
+                userService.findById(args[0] as Long)
+            }
+            .execute()
+    }
+}
+```
+
+Cela permet à vos utilisateurs d'écrire des scripts puissants tout en gardant le contrôle sur les fonctionnalités exposées.
 
 ## Fonctions natives
 
