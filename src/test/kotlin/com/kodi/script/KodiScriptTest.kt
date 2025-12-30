@@ -379,5 +379,60 @@ for (user in users) {
         assertFalse(objResult.hasErrors)
         assertEquals(2, objResult.output.size)
         assertEquals("Alice", objResult.output[0])
+
+        // Test if inside for loop - count specific values
+        val ifResult =
+                KodiScript.run(
+                        """
+let count = 0
+for (n in numbers) {
+    if (n == 2) {
+        count = count + 1
+    }
+    if (n == 4) {
+        count = count + 1
+    }
+}
+count
+""",
+                        vars
+                )
+        assertFalse(ifResult.hasErrors, "Errors: ${ifResult.errors}")
+        assertEquals(2.0, ifResult.value)
+
+        // Test conditional print inside for loop
+        val condResult =
+                KodiScript.run(
+                        """
+for (n in numbers) {
+    if (n > 3) {
+        print(n)
+    }
+}
+""",
+                        vars
+                )
+        assertFalse(condResult.hasErrors)
+        assertEquals(2, condResult.output.size)
+
+        // Test if-else inside for loop
+        val ifElseResult =
+                KodiScript.run(
+                        """
+let big = 0
+let small = 0
+for (n in numbers) {
+    if (n > 3) {
+        big = big + 1
+    } else {
+        small = small + 1
+    }
+}
+big
+""",
+                        vars
+                )
+        assertFalse(ifElseResult.hasErrors)
+        assertEquals(2.0, ifElseResult.value)
     }
 }

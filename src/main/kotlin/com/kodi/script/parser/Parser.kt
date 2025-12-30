@@ -213,24 +213,18 @@ class Parser(private val lexer: Lexer) {
 
     private fun parseBlockStatement(): BlockStatement {
         val block = BlockStatement(curToken)
-        nextToken()
+        nextToken() // consume opening brace
 
         while (!curTokenIs(TokenType.RBRACE) && !curTokenIs(TokenType.EOF)) {
             consumeEndOfStatement()
             if (curTokenIs(TokenType.RBRACE)) break
 
             parseStatement()?.let { block.statements.add(it) }
-            // Move to the next token after parsing a statement
-            if (!curTokenIs(TokenType.EOF) &&
-                            !curTokenIs(TokenType.RBRACE) &&
-                            !curTokenIs(TokenType.SEMICOLON) &&
-                            !curTokenIs(TokenType.NEWLINE)
-            ) {
-                nextToken()
-            }
+            nextToken() // move past the statement
             consumeEndOfStatement()
         }
 
+        // Note: we leave curToken on RBRACE, the caller should advance if needed
         return block
     }
 
