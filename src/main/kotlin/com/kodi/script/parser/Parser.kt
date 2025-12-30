@@ -25,6 +25,8 @@ class Parser(private val lexer: Lexer) {
         prefixParseFns[TokenType.MINUS] = ::parsePrefixExpression
         prefixParseFns[TokenType.NOT] = ::parsePrefixExpression
         prefixParseFns[TokenType.LPAREN] = ::parseGroupedExpression
+        prefixParseFns[TokenType.LBRACKET] = ::parseArrayLiteral
+        prefixParseFns[TokenType.LBRACE] = ::parseObjectLiteral
 
         // Register infix parse functions
         infixParseFns[TokenType.PLUS] = ::parseInfixExpression
@@ -43,6 +45,7 @@ class Parser(private val lexer: Lexer) {
         infixParseFns[TokenType.DOT] = ::parsePropertyAccess
         infixParseFns[TokenType.SAFE_ACCESS] = ::parseSafeAccess
         infixParseFns[TokenType.LPAREN] = ::parseCallExpression
+        infixParseFns[TokenType.LBRACKET] = ::parseIndexExpression
 
         // Initialize tokens
         nextToken()
@@ -288,6 +291,88 @@ class Parser(private val lexer: Lexer) {
         return exp
     }
 
+    private fun parseArrayLiteral(): Expression? {
+        val token = curToken
+        val elements = parseExpressionList(TokenType.RBRACKET)
+        return ArrayLiteral(token, elements)
+    }
+
+    private fun parseExpressionList(end: TokenType): List<Expression> {
+        val list = mutableListOf<Expression>()
+
+        if (peekTokenIs(end)) {
+            nextToken()
+            return list
+        }
+
+        nextToken()
+        parseExpression(LOWEST)?.let { list.add(it) }
+
+        while (peekTokenIs(TokenType.COMMA)) {
+            nextToken()
+            nextToken()
+            parseExpression(LOWEST)?.let { list.add(it) }
+        }
+
+        if (!expectPeek(end)) {
+            return emptyList()
+        }
+
+        return list
+    }
+
+    private fun parseObjectLiteral(): Expression? {
+        val token = curToken
+        val pairs = mutableMapOf<String, Expression>()
+
+        if (peekTokenIs(TokenType.RBRACE)) {
+            nextToken()
+            return ObjectLiteral(token, pairs)
+        }
+
+        while (!peekTokenIs(TokenType.RBRACE)) {
+            nextToken()
+            // Support both string "key" and identifier key
+            val key =
+                    if (curTokenIs(TokenType.STRING) || curTokenIs(TokenType.IDENT)) {
+                        curToken.literal
+                    } else {
+                        addError("expected string or identifier as object key")
+                        return null
+                    }
+
+            if (!expectPeek(TokenType.COLON)) {
+                return null
+            }
+
+            nextToken()
+            val value = parseExpression(LOWEST) ?: return null
+            pairs[key] = value
+
+            if (!peekTokenIs(TokenType.RBRACE) && !expectPeek(TokenType.COMMA)) {
+                return null
+            }
+        }
+
+        if (!expectPeek(TokenType.RBRACE)) {
+            return null
+        }
+
+        return ObjectLiteral(token, pairs)
+    }
+
+    private fun parseIndexExpression(left: Expression): Expression? {
+        val token = curToken
+        nextToken()
+        val index = parseExpression(LOWEST) ?: return null
+
+        if (!expectPeek(TokenType.RBRACKET)) {
+            return null
+        }
+
+        return IndexExpr(token, left, index)
+    }
+
     private fun parseInfixExpression(left: Expression): Expression? {
         val token = curToken
         val operator = curToken.literal
@@ -375,6 +460,7 @@ class Parser(private val lexer: Lexer) {
                         TokenType.ASTERISK to PRODUCT,
                         TokenType.SLASH to PRODUCT,
                         TokenType.LPAREN to CALL,
+                        TokenType.LBRACKET to ACCESS,
                         TokenType.DOT to ACCESS,
                         TokenType.SAFE_ACCESS to ACCESS
                 )

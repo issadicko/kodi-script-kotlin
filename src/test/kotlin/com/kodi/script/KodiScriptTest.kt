@@ -435,4 +435,40 @@ big
         assertFalse(ifElseResult.hasErrors)
         assertEquals(2.0, ifElseResult.value)
     }
+
+    @Test
+    fun `test array and object literals`() {
+        // Test array literal
+        val arrayResult = KodiScript.run("let arr = [1, 2, 3]; arr", emptyMap())
+        assertFalse(arrayResult.hasErrors)
+        val arr = arrayResult.value as List<*>
+        assertEquals(3, arr.size)
+        assertEquals(1.0, arr[0])
+
+        // Test array index
+        val arrayIndexResult = KodiScript.run("let arr = [10, 20, 30]; arr[1]", emptyMap())
+        assertFalse(arrayIndexResult.hasErrors)
+        assertEquals(20.0, arrayIndexResult.value)
+
+        // Test object literal
+        val objResult =
+                KodiScript.run("let obj = {name: \"Kodi\", age: 10}; obj[\"name\"]", emptyMap())
+        assertFalse(objResult.hasErrors)
+        assertEquals("Kodi", objResult.value)
+
+        // Test object literal with identifier keys
+        val objIdentResult =
+                KodiScript.run("let obj = {name: \"Kodi\", age: 10}; obj[\"age\"]", emptyMap())
+        assertFalse(objIdentResult.hasErrors)
+        assertEquals(10.0, objIdentResult.value)
+
+        // Test nested
+        val nestedResult =
+                KodiScript.run(
+                        "let data = {users: [{name: \"Alice\"}]}; data[\"users\"][0][\"name\"]",
+                        emptyMap()
+                )
+        assertFalse(nestedResult.hasErrors)
+        assertEquals("Alice", nestedResult.value)
+    }
 }

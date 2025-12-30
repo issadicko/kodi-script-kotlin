@@ -97,10 +97,13 @@ class Lexer(private val input: String) {
                             }
                     ',' -> newToken(TokenType.COMMA)
                     ';' -> newToken(TokenType.SEMICOLON)
+                    ':' -> newToken(TokenType.COLON)
                     '(' -> newToken(TokenType.LPAREN)
                     ')' -> newToken(TokenType.RPAREN)
                     '{' -> newToken(TokenType.LBRACE)
                     '}' -> newToken(TokenType.RBRACE)
+                    '[' -> newToken(TokenType.LBRACKET)
+                    ']' -> newToken(TokenType.RBRACKET)
                     '.' -> newToken(TokenType.DOT)
                     '"' -> {
                         val str = readString()

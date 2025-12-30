@@ -91,6 +91,21 @@ data class NullLiteral(val token: Token) : Expression {
     override fun tokenLiteral(): String = token.literal
 }
 
+/** Array literal: [elem1, elem2, ...] */
+data class ArrayLiteral(val token: Token, val elements: List<Expression>) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Object literal: {key: value, ...} */
+data class ObjectLiteral(val token: Token, val pairs: Map<String, Expression>) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Index expression: left[index] */
+data class IndexExpr(val token: Token, val left: Expression, val index: Expression) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Binary expression: left op right */
 data class BinaryExpr(
         val token: Token,

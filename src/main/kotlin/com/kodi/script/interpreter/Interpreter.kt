@@ -151,6 +151,30 @@ class Interpreter(
             is ElvisExpr -> evalElvisExpr(expr)
             is PropertyAccessExpr -> evalPropertyAccess(expr)
             is CallExpr -> evalCallExpr(expr)
+            is ArrayLiteral -> expr.elements.map { evalExpression(it) }
+            is ObjectLiteral -> expr.pairs.mapValues { evalExpression(it.value) }
+            is IndexExpr -> evalIndexExpression(expr)
+        }
+    }
+
+    private fun evalIndexExpression(expr: IndexExpr): Any? {
+        val left = evalExpression(expr.left)
+        val index = evalExpression(expr.index)
+
+        return when (left) {
+            is List<*> -> {
+                val idx = toNumber(index).toInt()
+                if (idx < 0 || idx >= left.size) null else left[idx]
+            }
+            is Map<*, *> -> {
+                @Suppress("UNCHECKED_CAST") val map = left as Map<String, Any?>
+                val key = index.toString()
+                map[key]
+            }
+            else ->
+                    throw RuntimeException(
+                            "index operator not supported: ${left?.javaClass?.simpleName}"
+                    )
         }
     }
 
