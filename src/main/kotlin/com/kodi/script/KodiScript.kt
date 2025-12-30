@@ -77,8 +77,7 @@ private constructor(
         }
 
         // Use singleton for built-ins, create copy only if custom functions are registered
-        val natives =
-                if (customFunctions.isEmpty()) {
+        val natives = if (customFunctions.isEmpty()) {
                     NativeFunctions.shared
                 } else {
                     NativeFunctions.withBuiltins().apply {
@@ -87,8 +86,7 @@ private constructor(
                 }
 
         // Interpreter with environment and natives
-        val interpreter =
-                if (variables.isNotEmpty()) {
+        val interpreter = if (variables.isNotEmpty()) {
                     val env = com.kodi.script.interpreter.Environment()
                     variables.forEach { (k, v) -> env.set(k, v) }
                     Interpreter(env, natives)
