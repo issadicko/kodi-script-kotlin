@@ -144,10 +144,24 @@ class Interpreter(
         return result
     }
 
+    private fun evalStringTemplate(tmpl: StringTemplate): Any {
+        val result = StringBuilder()
+        for (part in tmpl.parts) {
+            val value = evalExpression(part)
+            if (value == null) {
+                result.append("null")
+            } else {
+                result.append(value.toString())
+            }
+        }
+        return result.toString()
+    }
+
     private fun evalExpression(expr: Expression): Any? {
         return when (expr) {
             is NumberLiteral -> expr.value
             is StringLiteral -> expr.value
+            is StringTemplate -> evalStringTemplate(expr)
             is BooleanLiteral -> expr.value
             is NullLiteral -> null
             is Identifier -> {

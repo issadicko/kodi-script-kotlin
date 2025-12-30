@@ -81,6 +81,11 @@ data class StringLiteral(val token: Token, val value: String) : Expression {
     override fun tokenLiteral(): String = token.literal
 }
 
+/** String template: "Hello ${name}!" */
+data class StringTemplate(val token: Token, val parts: List<Expression>) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Boolean literal (true/false). */
 data class BooleanLiteral(val token: Token, val value: Boolean) : Expression {
     override fun tokenLiteral(): String = token.literal

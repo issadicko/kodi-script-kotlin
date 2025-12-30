@@ -11,6 +11,7 @@ enum class TokenType {
         IDENT,
         NUMBER,
         STRING,
+        STRING_TEMPLATE,
 
         // Operators
         ASSIGN, // =
@@ -62,7 +63,19 @@ enum class TokenType {
 
         /** Returns true if this token type can end a statement (for ASI). */
         fun canEndStatement(): Boolean =
-                this in setOf(IDENT, NUMBER, STRING, TRUE, FALSE, NULL, RPAREN, RBRACE, RBRACKET)
+                this in
+                        setOf(
+                                IDENT,
+                                NUMBER,
+                                STRING,
+                                STRING_TEMPLATE,
+                                TRUE,
+                                FALSE,
+                                NULL,
+                                RPAREN,
+                                RBRACE,
+                                RBRACKET
+                        )
 
         /** Returns true if this token type indicates statement continuation. */
         fun isOperatorContinuation(): Boolean =

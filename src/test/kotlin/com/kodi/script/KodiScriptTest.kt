@@ -541,4 +541,62 @@ big
         assertFalse(recursionResult.hasErrors)
         assertEquals(120.0, recursionResult.value)
     }
+
+    @Test
+    fun `test string templates`() {
+        // Basic variable interpolation
+        val basicResult =
+                KodiScript.run(
+                        """
+            let name = "World"
+            "Hello ${"$"}{name}!"
+        """.trimIndent()
+                )
+        assertFalse(basicResult.hasErrors, "Basic errors: ${basicResult.errors}")
+        assertEquals("Hello World!", basicResult.value)
+
+        // Expression interpolation
+        val exprResult = KodiScript.run(""""Result: ${"$"}{2 + 3}"""")
+        assertFalse(exprResult.hasErrors, "Expr errors: ${exprResult.errors}")
+        assertEquals("Result: 5", exprResult.value)
+
+        // Multiple interpolations
+        val multiResult =
+                KodiScript.run(
+                        """
+            let a = "Hello"
+            let b = "World"
+            "${"$"}{a}, ${"$"}{b}!"
+        """.trimIndent()
+                )
+        assertFalse(multiResult.hasErrors, "Multi errors: ${multiResult.errors}")
+        assertEquals("Hello, World!", multiResult.value)
+
+        // With host variables
+        val hostVars = mapOf("user" to mapOf("name" to "Alice"))
+        val hostResult = KodiScript.run(""""Welcome, ${"$"}{user.name}!"""", hostVars)
+        assertFalse(hostResult.hasErrors, "Host errors: ${hostResult.errors}")
+        assertEquals("Welcome, Alice!", hostResult.value)
+
+        // Null value in template
+        val nullResult =
+                KodiScript.run(
+                        """
+            let x = null
+            "Value is ${"$"}{x}"
+        """.trimIndent()
+                )
+        assertFalse(nullResult.hasErrors, "Null errors: ${nullResult.errors}")
+        assertEquals("Value is null", nullResult.value)
+
+        // Plain string (no templates)
+        val plainResult = KodiScript.run(""""Hello World"""")
+        assertFalse(plainResult.hasErrors)
+        assertEquals("Hello World", plainResult.value)
+
+        // Escaped dollar sign
+        val escapeResult = KodiScript.run(""""Price is \$100"""")
+        assertFalse(escapeResult.hasErrors, "Escape errors: ${escapeResult.errors}")
+        assertEquals("Price is $100", escapeResult.value)
+    }
 }

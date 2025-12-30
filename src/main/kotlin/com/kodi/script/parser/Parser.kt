@@ -19,6 +19,7 @@ class Parser(private val lexer: Lexer) {
         prefixParseFns[TokenType.IDENT] = ::parseIdentifier
         prefixParseFns[TokenType.NUMBER] = ::parseNumberLiteral
         prefixParseFns[TokenType.STRING] = ::parseStringLiteral
+        prefixParseFns[TokenType.STRING_TEMPLATE] = ::parseStringTemplate
         prefixParseFns[TokenType.TRUE] = ::parseBooleanLiteral
         prefixParseFns[TokenType.FALSE] = ::parseBooleanLiteral
         prefixParseFns[TokenType.NULL] = ::parseNullLiteral
@@ -271,6 +272,60 @@ class Parser(private val lexer: Lexer) {
     }
 
     private fun parseStringLiteral(): Expression = StringLiteral(curToken, curToken.literal)
+
+    private fun parseStringTemplate(): Expression? {
+        val token = curToken
+        val parts = mutableListOf<Expression>()
+        val literal = curToken.literal
+        var i = 0
+
+        while (i < literal.length) {
+            // Find next ${
+            val start = i
+            while (i < literal.length &&
+                    !(i + 1 < literal.length && literal[i] == '$' && literal[i + 1] == '{')) {
+                i++
+            }
+
+            // Add string part if non-empty
+            if (i > start) {
+                val strToken = Token(TokenType.STRING, literal.substring(start, i))
+                parts.add(StringLiteral(strToken, literal.substring(start, i)))
+            }
+
+            // If we found ${, parse the expression
+            if (i + 1 < literal.length && literal[i] == '$' && literal[i + 1] == '{') {
+                i += 2 // skip ${
+
+                // Find matching }
+                var braceCount = 1
+                val exprStart = i
+                while (i < literal.length && braceCount > 0) {
+                    if (literal[i] == '{') braceCount++ else if (literal[i] == '}') braceCount--
+                    if (braceCount > 0) i++
+                }
+
+                // Extract and parse the expression
+                val exprStr = literal.substring(exprStart, i)
+                if (i < literal.length) i++ // skip closing }
+
+                // Create a new lexer and parser for the expression
+                val exprLexer = Lexer(exprStr)
+                val exprParser = Parser(exprLexer)
+                val expr = exprParser.parseExpression(LOWEST)
+
+                if (exprParser.errors().isNotEmpty()) {
+                    errors.addAll(exprParser.errors())
+                }
+
+                if (expr != null) {
+                    parts.add(expr)
+                }
+            }
+        }
+
+        return StringTemplate(token, parts)
+    }
 
     private fun parseBooleanLiteral(): Expression =
             BooleanLiteral(curToken, curTokenIs(TokenType.TRUE))

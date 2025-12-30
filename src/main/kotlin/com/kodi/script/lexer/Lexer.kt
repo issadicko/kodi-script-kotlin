@@ -106,8 +106,9 @@ class Lexer(private val input: String) {
                     ']' -> newToken(TokenType.RBRACKET)
                     '.' -> newToken(TokenType.DOT)
                     '"' -> {
-                        val str = readString()
-                        Token(TokenType.STRING, str, line, column)
+                        val (str, isTemplate) = readString()
+                        val type = if (isTemplate) TokenType.STRING_TEMPLATE else TokenType.STRING
+                        Token(type, str, line, column)
                     }
                     '\n' -> {
                         val result =
@@ -185,8 +186,9 @@ class Lexer(private val input: String) {
         return input.substring(startPos, position)
     }
 
-    private fun readString(): String {
+    private fun readString(): Pair<String, Boolean> {
         val result = StringBuilder()
+        var isTemplate = false
         readChar() // skip opening quote
         while (ch != '"' && ch != '\u0000') {
             if (ch == '\\') {
@@ -196,13 +198,20 @@ class Lexer(private val input: String) {
                     't' -> result.append('\t')
                     '"' -> result.append('"')
                     '\\' -> result.append('\\')
+                    '$' -> result.append('$')
                     else -> result.append(ch)
                 }
+            } else if (ch == '$' && peekChar() == '{') {
+                // Template expression detected
+                isTemplate = true
+                result.append('$')
+                result.append('{')
+                readChar() // consume $
             } else {
                 result.append(ch)
             }
             readChar()
         }
-        return result.toString()
+        return Pair(result.toString(), isTemplate)
     }
 }
