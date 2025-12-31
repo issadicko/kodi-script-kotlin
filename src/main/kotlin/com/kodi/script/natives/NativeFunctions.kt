@@ -670,7 +670,7 @@ class NativeFunctions private constructor() {
                         ?: throw IllegalArgumentException(
                                 "slice requires an array as first argument"
                         )
-        val start = toDouble(args[0]).toInt().let { maxOf(0, it) }
+        val start = toDouble(args[1]).toInt().let { maxOf(0, it) }
 
         if (start >= arr.size) return emptyList()
 
