@@ -1,5 +1,6 @@
 package com.kodi.script
 
+import com.kodi.script.cache.ASTCache
 import com.kodi.script.interpreter.Interpreter
 import com.kodi.script.lexer.Lexer
 import com.kodi.script.natives.NativeFunc
@@ -31,13 +32,15 @@ class KodiScript
 private constructor(
         private val source: String,
         private val variables: Map<String, Any?> = emptyMap(),
-        private val customFunctions: Map<String, NativeFunc> = emptyMap()
+        private val customFunctions: Map<String, NativeFunc> = emptyMap(),
+        private val useCache: Boolean = true
 ) {
 
     /** Builder for KodiScript execution. */
     class Builder(private val source: String) {
         private val variables = mutableMapOf<String, Any?>()
         private val customFunctions = mutableMapOf<String, NativeFunc>()
+        private var useCache = true
 
         /** Inject host variables into the script context. */
         fun withVariables(vars: Map<String, Any?>): Builder {
@@ -57,27 +60,48 @@ private constructor(
             return this
         }
 
+        /** Enable or disable AST caching. */
+        fun withCache(enabled: Boolean): Builder {
+            useCache = enabled
+            return this
+        }
+
         /** Execute the script. */
         fun execute(): ScriptResult {
-            return KodiScript(source, variables, customFunctions).execute()
+            return KodiScript(source, variables, customFunctions, useCache).execute()
         }
     }
 
     /** Execute the script and return the result. */
     fun execute(): ScriptResult {
-        // Lexer
-        val lexer = Lexer(source)
+        // Try to get from cache first
+        val program =
+                if (useCache) {
+                    ASTCache.default.get(source)
+                } else {
+                    null
+                }
+                        ?: run {
+                            // Parse if not cached
+                            val lexer = Lexer(source)
+                            val parser = Parser(lexer)
+                            val parsedProgram = parser.parseProgram()
 
-        // Parser
-        val parser = Parser(lexer)
-        val program = parser.parseProgram()
+                            if (parser.errors().isNotEmpty()) {
+                                return ScriptResult(errors = parser.errors())
+                            }
 
-        if (parser.errors().isNotEmpty()) {
-            return ScriptResult(errors = parser.errors())
-        }
+                            // Store in cache
+                            if (useCache) {
+                                ASTCache.default.set(source, parsedProgram)
+                            }
+
+                            parsedProgram
+                        }
 
         // Use singleton for built-ins, create copy only if custom functions are registered
-        val natives = if (customFunctions.isEmpty()) {
+        val natives =
+                if (customFunctions.isEmpty()) {
                     NativeFunctions.shared
                 } else {
                     NativeFunctions.withBuiltins().apply {
@@ -86,7 +110,8 @@ private constructor(
                 }
 
         // Interpreter with environment and natives
-        val interpreter = if (variables.isNotEmpty()) {
+        val interpreter =
+                if (variables.isNotEmpty()) {
                     val env = com.kodi.script.interpreter.Environment()
                     variables.forEach { (k, v) -> env.set(k, v) }
                     Interpreter(env, natives)
