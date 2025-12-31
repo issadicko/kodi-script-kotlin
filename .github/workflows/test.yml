@@ -36,3 +36,7 @@ jobs:
       env:
         KODI_COMPLIANCE_TESTS_PATH: ${{ github.workspace }}/compliance-tests
       run: ./gradlew test --no-daemon
+    
+    - name: Run Benchmarks
+      run: ./gradlew test --tests "com.kodi.script.BenchmarkTest" --no-daemon
+
