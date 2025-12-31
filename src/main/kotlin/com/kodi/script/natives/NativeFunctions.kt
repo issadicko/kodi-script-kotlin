@@ -53,6 +53,9 @@ class NativeFunctions private constructor() {
         functions["startsWith"] = ::nativeStartsWith
         functions["endsWith"] = ::nativeEndsWith
         functions["indexOf"] = ::nativeIndexOf
+        functions["padLeft"] = ::nativePadLeft
+        functions["padRight"] = ::nativePadRight
+        functions["repeat"] = ::nativeRepeat
 
         // JSON functions
         functions["jsonParse"] = ::nativeJsonParse
@@ -319,6 +322,29 @@ class NativeFunctions private constructor() {
                                 "indexOf requires a string as second argument"
                         )
         return str.indexOf(substr).toDouble()
+    }
+
+    private fun nativePadLeft(args: List<Any?>): String {
+        require(args.size >= 2) { "padLeft requires at least 2 arguments" }
+        val str = args[0]?.toString() ?: ""
+        val length = (args[1] as? Number)?.toInt() ?: 0
+        val padChar = if (args.size > 2) (args[2]?.toString()?.firstOrNull() ?: ' ') else ' '
+        return str.padStart(length, padChar)
+    }
+
+    private fun nativePadRight(args: List<Any?>): String {
+        require(args.size >= 2) { "padRight requires at least 2 arguments" }
+        val str = args[0]?.toString() ?: ""
+        val length = (args[1] as? Number)?.toInt() ?: 0
+        val padChar = if (args.size > 2) (args[2]?.toString()?.firstOrNull() ?: ' ') else ' '
+        return str.padEnd(length, padChar)
+    }
+
+    private fun nativeRepeat(args: List<Any?>): String {
+        require(args.size >= 2) { "repeat requires 2 arguments" }
+        val str = args[0]?.toString() ?: ""
+        val count = (args[1] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0
+        return str.repeat(count)
     }
 
     // ============ JSON functions ============

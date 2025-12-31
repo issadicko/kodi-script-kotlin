@@ -19,6 +19,7 @@ enum class TokenType {
         MINUS, // -
         ASTERISK, // *
         SLASH, // /
+        PERCENT, // %
 
         // Comparison
         EQ, // ==
@@ -85,6 +86,7 @@ enum class TokenType {
                                 MINUS,
                                 ASTERISK,
                                 SLASH,
+                                PERCENT,
                                 AND,
                                 OR,
                                 EQ,

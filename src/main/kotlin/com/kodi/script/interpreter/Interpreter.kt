@@ -233,6 +233,11 @@ class Interpreter(
                 if (r == 0.0) throw RuntimeException("division by zero")
                 evalArithmetic(left, right) { a, b -> a / b }
             }
+            "%" -> {
+                val r = toNumber(right)
+                if (r == 0.0) throw RuntimeException("modulo by zero")
+                evalArithmetic(left, right) { a, b -> a % b }
+            }
             "==" -> left == right
             "!=" -> left != right
             "<" -> evalComparison(left, right) { a, b -> a < b }
@@ -310,10 +315,84 @@ class Interpreter(
             return null
         }
 
+        // Special handling for higher-order array functions
+        if (funcExpr is Identifier) {
+            when (funcExpr.value) {
+                "map" -> return evalMapFunction(expr)
+                "filter" -> return evalFilterFunction(expr)
+                "reduce" -> return evalReduceFunction(expr)
+                "find" -> return evalFindFunction(expr)
+                "findIndex" -> return evalFindIndexFunction(expr)
+            }
+        }
+
         val function = evalExpression(funcExpr)
         val args = expr.arguments.map { evalExpression(it) }
 
         return applyFunction(function, args)
+    }
+
+    private fun evalMapFunction(expr: CallExpr): Any? {
+        if (expr.arguments.size < 2)
+                throw RuntimeException("map requires 2 arguments: array and function")
+        val arrVal = evalExpression(expr.arguments[0])
+        val arr = arrVal as? List<*> ?: return listOf<Any?>()
+        val fnVal = evalExpression(expr.arguments[1])
+        return arr.mapIndexed { idx, item -> applyFunction(fnVal, listOf(item, idx.toDouble())) }
+    }
+
+    private fun evalFilterFunction(expr: CallExpr): Any? {
+        if (expr.arguments.size < 2)
+                throw RuntimeException("filter requires 2 arguments: array and function")
+        val arrVal = evalExpression(expr.arguments[0])
+        val arr = arrVal as? List<*> ?: return listOf<Any?>()
+        val fnVal = evalExpression(expr.arguments[1])
+        return arr.filterIndexed { idx, item ->
+            isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))
+        }
+    }
+
+    private fun evalReduceFunction(expr: CallExpr): Any? {
+        if (expr.arguments.size < 3)
+                throw RuntimeException(
+                        "reduce requires 3 arguments: array, function, and initial value"
+                )
+        val arrVal = evalExpression(expr.arguments[0])
+        val arr = arrVal as? List<*> ?: return null
+        val fnVal = evalExpression(expr.arguments[1])
+        var accumulator = evalExpression(expr.arguments[2])
+        arr.forEachIndexed { idx, item ->
+            accumulator = applyFunction(fnVal, listOf(accumulator, item, idx.toDouble()))
+        }
+        return accumulator
+    }
+
+    private fun evalFindFunction(expr: CallExpr): Any? {
+        if (expr.arguments.size < 2)
+                throw RuntimeException("find requires 2 arguments: array and function")
+        val arrVal = evalExpression(expr.arguments[0])
+        val arr = arrVal as? List<*> ?: return null
+        val fnVal = evalExpression(expr.arguments[1])
+        arr.forEachIndexed { idx, item ->
+            if (isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))) {
+                return item
+            }
+        }
+        return null
+    }
+
+    private fun evalFindIndexFunction(expr: CallExpr): Any? {
+        if (expr.arguments.size < 2)
+                throw RuntimeException("findIndex requires 2 arguments: array and function")
+        val arrVal = evalExpression(expr.arguments[0])
+        val arr = arrVal as? List<*> ?: return -1.0
+        val fnVal = evalExpression(expr.arguments[1])
+        arr.forEachIndexed { idx, item ->
+            if (isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))) {
+                return idx.toDouble()
+            }
+        }
+        return -1.0
     }
 
     private fun applyFunction(fn: Any?, args: List<Any?>): Any? {

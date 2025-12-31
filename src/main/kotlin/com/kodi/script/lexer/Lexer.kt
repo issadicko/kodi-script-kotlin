@@ -48,6 +48,7 @@ class Lexer(private val input: String) {
                         }
                         newToken(TokenType.SLASH)
                     }
+                    '%' -> newToken(TokenType.PERCENT)
                     '!' ->
                             if (peekChar() == '=') {
                                 readChar()

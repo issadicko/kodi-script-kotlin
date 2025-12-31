@@ -35,6 +35,7 @@ class Parser(private val lexer: Lexer) {
         infixParseFns[TokenType.MINUS] = ::parseInfixExpression
         infixParseFns[TokenType.ASTERISK] = ::parseInfixExpression
         infixParseFns[TokenType.SLASH] = ::parseInfixExpression
+        infixParseFns[TokenType.PERCENT] = ::parseInfixExpression
         infixParseFns[TokenType.EQ] = ::parseInfixExpression
         infixParseFns[TokenType.NOT_EQ] = ::parseInfixExpression
         infixParseFns[TokenType.LT] = ::parseInfixExpression
@@ -546,6 +547,7 @@ class Parser(private val lexer: Lexer) {
                         TokenType.MINUS to SUM,
                         TokenType.ASTERISK to PRODUCT,
                         TokenType.SLASH to PRODUCT,
+                        TokenType.PERCENT to PRODUCT,
                         TokenType.LPAREN to CALL,
                         TokenType.LBRACKET to ACCESS,
                         TokenType.DOT to ACCESS,

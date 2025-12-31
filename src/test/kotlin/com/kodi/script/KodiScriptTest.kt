@@ -116,6 +116,18 @@ class KodiScriptTest {
         }
 
         @Test
+        fun `test modulo operator`() {
+                val tests =
+                        listOf("10 % 3" to 1.0, "10 % 2" to 0.0, "5 % 2" to 1.0, "5.5 % 2" to 1.5)
+
+                tests.forEach { (source, expected) ->
+                        val result = KodiScript.run(source)
+                        assertFalse(result.hasErrors, "Errors in '$source': ${result.errors}")
+                        assertEquals(expected, result.value, "Failed for: $source")
+                }
+        }
+
+        @Test
         fun `test boolean logic`() {
                 val tests =
                         listOf(
