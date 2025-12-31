@@ -302,7 +302,11 @@ class Interpreter(
         // Special print handling
         if (funcExpr is Identifier && funcExpr.value == "print") {
             val args = expr.arguments.map { evalExpression(it) }
-            args.forEach { env.addOutput(it?.toString() ?: "null") }
+            args.forEach {
+                val output = it?.toString() ?: "null"
+                println(output)
+                env.addOutput(output)
+            }
             return null
         }
 
