@@ -2,9 +2,9 @@ name: KodiScript CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["**"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["**"]
 
 jobs:
   test-kotlin:
@@ -15,12 +15,24 @@ jobs:
         working-directory: .
     steps:
     - uses: actions/checkout@v3
+    
+    - name: Checkout Compliance Tests
+      uses: actions/checkout@v3
+      with:
+        repository: issadicko/kodi-compliance-tests
+        path: compliance-tests
+      continue-on-error: true
+    
     - name: Set up JDK 17
       uses: actions/setup-java@v3
       with:
         java-version: '17'
         distribution: 'temurin'
+    
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+    
     - name: Test with Gradle
+      env:
+        KODI_COMPLIANCE_TESTS_PATH: ${{ github.workspace }}/compliance-tests
       run: ./gradlew test --no-daemon
