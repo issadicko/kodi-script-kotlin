@@ -3,7 +3,9 @@ package com.kodi.script.natives
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
 import java.util.Base64
+import java.util.Date
 import java.util.UUID
 import kotlin.math.*
 import kotlin.random.Random
@@ -105,6 +107,24 @@ class NativeFunctions private constructor() {
         functions["first"] = ::nativeFirst
         functions["last"] = ::nativeLast
         functions["slice"] = ::nativeSlice
+
+        // Date/Time functions
+        functions["now"] = ::nativeNow
+        functions["date"] = ::nativeDate
+        functions["time"] = ::nativeTime
+        functions["datetime"] = ::nativeDatetime
+        functions["timestamp"] = ::nativeTimestamp
+        functions["formatDate"] = ::nativeFormatDate
+        functions["year"] = ::nativeYear
+        functions["month"] = ::nativeMonth
+        functions["day"] = ::nativeDay
+        functions["hour"] = ::nativeHour
+        functions["minute"] = ::nativeMinute
+        functions["second"] = ::nativeSecond
+        functions["dayOfWeek"] = ::nativeDayOfWeek
+        functions["addDays"] = ::nativeAddDays
+        functions["addHours"] = ::nativeAddHours
+        functions["diffDays"] = ::nativeDiffDays
     }
 
     // ============ String functions ============
@@ -724,5 +744,141 @@ class NativeFunctions private constructor() {
             }
             else -> "\"$value\""
         }
+    }
+
+    // ============ Date/Time functions ============
+
+    private fun nativeNow(args: List<Any?>): Double {
+        require(args.isEmpty()) { "now takes no arguments" }
+        return System.currentTimeMillis().toDouble()
+    }
+
+    private fun nativeDate(args: List<Any?>): String {
+        require(args.isEmpty()) { "date takes no arguments" }
+        return SimpleDateFormat("yyyy-MM-dd").format(Date())
+    }
+
+    private fun nativeTime(args: List<Any?>): String {
+        require(args.isEmpty()) { "time takes no arguments" }
+        return SimpleDateFormat("HH:mm:ss").format(Date())
+    }
+
+    private fun nativeDatetime(args: List<Any?>): String {
+        require(args.isEmpty()) { "datetime takes no arguments" }
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(Date())
+    }
+
+    private fun nativeTimestamp(args: List<Any?>): Double {
+        if (args.isEmpty()) return System.currentTimeMillis().toDouble()
+        val dateStr =
+                args[0] as? String
+                        ?: throw IllegalArgumentException("timestamp requires a string argument")
+        val formats =
+                listOf(
+                        "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                        "yyyy-MM-dd'T'HH:mm:ssXXX",
+                        "yyyy-MM-dd'T'HH:mm:ss",
+                        "yyyy-MM-dd HH:mm:ss",
+                        "yyyy-MM-dd"
+                )
+        for (format in formats) {
+            try {
+                return SimpleDateFormat(format).parse(dateStr)?.time?.toDouble()
+                        ?: throw IllegalArgumentException("cannot parse date")
+            } catch (_: Exception) {}
+        }
+        throw IllegalArgumentException("cannot parse date: $dateStr")
+    }
+
+    private fun nativeFormatDate(args: List<Any?>): String {
+        require(args.size in 1..2) { "formatDate requires 1 or 2 arguments" }
+        val ts = toDouble(args[0]).toLong()
+        val format =
+                if (args.size == 2) {
+                    args[1] as? String
+                            ?: throw IllegalArgumentException(
+                                    "formatDate requires a string as second argument"
+                            )
+                } else "YYYY-MM-DD"
+
+        val date = Date(ts)
+        var result = format
+        val cal = java.util.Calendar.getInstance().apply { time = date }
+        result = result.replace("YYYY", "%04d".format(cal.get(java.util.Calendar.YEAR)))
+        result = result.replace("MM", "%02d".format(cal.get(java.util.Calendar.MONTH) + 1))
+        result = result.replace("DD", "%02d".format(cal.get(java.util.Calendar.DAY_OF_MONTH)))
+        result = result.replace("HH", "%02d".format(cal.get(java.util.Calendar.HOUR_OF_DAY)))
+        result = result.replace("mm", "%02d".format(cal.get(java.util.Calendar.MINUTE)))
+        result = result.replace("ss", "%02d".format(cal.get(java.util.Calendar.SECOND)))
+        return result
+    }
+
+    private fun nativeYear(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        return cal.get(java.util.Calendar.YEAR).toDouble()
+    }
+
+    private fun nativeMonth(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        return (cal.get(java.util.Calendar.MONTH) + 1).toDouble()
+    }
+
+    private fun nativeDay(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        return cal.get(java.util.Calendar.DAY_OF_MONTH).toDouble()
+    }
+
+    private fun nativeHour(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        return cal.get(java.util.Calendar.HOUR_OF_DAY).toDouble()
+    }
+
+    private fun nativeMinute(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        return cal.get(java.util.Calendar.MINUTE).toDouble()
+    }
+
+    private fun nativeSecond(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        return cal.get(java.util.Calendar.SECOND).toDouble()
+    }
+
+    private fun nativeDayOfWeek(args: List<Any?>): Double {
+        val ts = if (args.isEmpty()) System.currentTimeMillis() else toDouble(args[0]).toLong()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        // Calendar.SUNDAY = 1, we want 0 = Sunday
+        return (cal.get(java.util.Calendar.DAY_OF_WEEK) - 1).toDouble()
+    }
+
+    private fun nativeAddDays(args: List<Any?>): Double {
+        require(args.size == 2) { "addDays requires 2 arguments (timestamp, days)" }
+        val ts = toDouble(args[0]).toLong()
+        val days = toDouble(args[1]).toInt()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        cal.add(java.util.Calendar.DAY_OF_MONTH, days)
+        return cal.timeInMillis.toDouble()
+    }
+
+    private fun nativeAddHours(args: List<Any?>): Double {
+        require(args.size == 2) { "addHours requires 2 arguments (timestamp, hours)" }
+        val ts = toDouble(args[0]).toLong()
+        val hours = toDouble(args[1]).toInt()
+        val cal = java.util.Calendar.getInstance().apply { time = Date(ts) }
+        cal.add(java.util.Calendar.HOUR_OF_DAY, hours)
+        return cal.timeInMillis.toDouble()
+    }
+
+    private fun nativeDiffDays(args: List<Any?>): Double {
+        require(args.size == 2) { "diffDays requires 2 arguments (timestamp1, timestamp2)" }
+        val ts1 = toDouble(args[0]).toLong()
+        val ts2 = toDouble(args[1]).toLong()
+        val diffMs = ts2 - ts1
+        return (diffMs / (1000 * 60 * 60 * 24)).toDouble()
     }
 }

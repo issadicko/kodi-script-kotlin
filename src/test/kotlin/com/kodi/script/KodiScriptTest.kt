@@ -613,4 +613,142 @@ big
                 assertFalse(escapeResult.hasErrors, "Escape errors: ${escapeResult.errors}")
                 assertEquals("Price is $100", escapeResult.value)
         }
+
+        @Test
+        fun `test date time functions`() {
+                // now() returns a timestamp
+                val nowResult = KodiScript.run("now()")
+                assertFalse(nowResult.hasErrors)
+                val timestamp = nowResult.value as Double
+                assertTrue(timestamp > 1700000000000) // After Nov 2023
+
+                // date() returns YYYY-MM-DD format
+                val dateResult = KodiScript.run("date()")
+                assertFalse(dateResult.hasErrors)
+                val dateStr = dateResult.value as String
+                assertEquals(10, dateStr.length)
+                assertEquals('-', dateStr[4])
+
+                // time() returns HH:MM:SS format
+                val timeResult = KodiScript.run("time()")
+                assertFalse(timeResult.hasErrors)
+                val timeStr = timeResult.value as String
+                assertEquals(8, timeStr.length)
+                assertEquals(':', timeStr[2])
+
+                // datetime() returns ISO format
+                val datetimeResult = KodiScript.run("datetime()")
+                assertFalse(datetimeResult.hasErrors)
+                val dtStr = datetimeResult.value as String
+                assertTrue(dtStr.contains("T"))
+
+                // year(), month(), day()
+                val yearResult = KodiScript.run("year()")
+                assertFalse(yearResult.hasErrors)
+                assertTrue((yearResult.value as Double) >= 2024)
+
+                val monthResult = KodiScript.run("month()")
+                assertFalse(monthResult.hasErrors)
+                val month = monthResult.value as Double
+                assertTrue(month in 1.0..12.0)
+
+                val dayResult = KodiScript.run("day()")
+                assertFalse(dayResult.hasErrors)
+                val day = dayResult.value as Double
+                assertTrue(day in 1.0..31.0)
+
+                // hour(), minute(), second()
+                val hourResult = KodiScript.run("hour()")
+                assertFalse(hourResult.hasErrors)
+                val hour = hourResult.value as Double
+                assertTrue(hour in 0.0..23.0)
+
+                val minuteResult = KodiScript.run("minute()")
+                assertFalse(minuteResult.hasErrors)
+                val minute = minuteResult.value as Double
+                assertTrue(minute in 0.0..59.0)
+
+                val secondResult = KodiScript.run("second()")
+                assertFalse(secondResult.hasErrors)
+                val second = secondResult.value as Double
+                assertTrue(second in 0.0..59.0)
+
+                // dayOfWeek() returns 0-6
+                val dowResult = KodiScript.run("dayOfWeek()")
+                assertFalse(dowResult.hasErrors)
+                val dow = dowResult.value as Double
+                assertTrue(dow in 0.0..6.0)
+        }
+
+        @Test
+        fun `test date parsing and formatting`() {
+                // timestamp() parses date string
+                val tsResult = KodiScript.run("""timestamp("2024-12-25")""")
+                assertFalse(tsResult.hasErrors)
+                val ts = tsResult.value as Double
+                assertTrue(ts > 0)
+
+                // formatDate() formats timestamp
+                val formatResult =
+                        KodiScript.run(
+                                """
+                        let ts = timestamp("2024-12-25")
+                        formatDate(ts, "DD/MM/YYYY")
+                """.trimIndent()
+                        )
+                assertFalse(formatResult.hasErrors)
+                assertEquals("25/12/2024", formatResult.value)
+
+                // Extract components from specific date
+                val yearResult = KodiScript.run("""year(timestamp("2024-12-25"))""")
+                assertFalse(yearResult.hasErrors)
+                assertEquals(2024.0, yearResult.value)
+
+                val monthResult = KodiScript.run("""month(timestamp("2024-12-25"))""")
+                assertFalse(monthResult.hasErrors)
+                assertEquals(12.0, monthResult.value)
+
+                val dayResult = KodiScript.run("""day(timestamp("2024-12-25"))""")
+                assertFalse(dayResult.hasErrors)
+                assertEquals(25.0, dayResult.value)
+        }
+
+        @Test
+        fun `test date arithmetic`() {
+                // addDays()
+                val addDaysResult =
+                        KodiScript.run(
+                                """
+                        let ts = timestamp("2024-01-01")
+                        let nextWeek = addDays(ts, 7)
+                        day(nextWeek)
+                """.trimIndent()
+                        )
+                assertFalse(addDaysResult.hasErrors)
+                assertEquals(8.0, addDaysResult.value)
+
+                // diffDays()
+                val diffResult =
+                        KodiScript.run(
+                                """
+                        let ts1 = timestamp("2024-01-01")
+                        let ts2 = timestamp("2024-01-08")
+                        diffDays(ts1, ts2)
+                """.trimIndent()
+                        )
+                assertFalse(diffResult.hasErrors)
+                assertEquals(7.0, diffResult.value)
+
+                // addHours()
+                val addHoursResult =
+                        KodiScript.run(
+                                """
+                        let ts = now()
+                        let later = addHours(ts, 24)
+                        diffDays(ts, later)
+                """.trimIndent()
+                        )
+                assertFalse(addHoursResult.hasErrors)
+                assertEquals(1.0, addHoursResult.value)
+        }
 }
