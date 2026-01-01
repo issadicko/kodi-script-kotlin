@@ -9,9 +9,9 @@ import com.kodi.script.parser.Parser
 
 /** Result of script execution. */
 data class ScriptResult(
-        val value: Any? = null,
-        val output: List<String> = emptyList(),
-        val errors: List<String> = emptyList()
+    val value: Any? = null,
+    val output: List<String> = emptyList(),
+    val errors: List<String> = emptyList()
 ) {
     val hasErrors: Boolean
         get() = errors.isNotEmpty()
@@ -30,10 +30,10 @@ data class ScriptResult(
  */
 class KodiScript
 private constructor(
-        private val source: String,
-        private val variables: Map<String, Any?> = emptyMap(),
-        private val customFunctions: Map<String, NativeFunc> = emptyMap(),
-        private val useCache: Boolean = true
+    private val source: String,
+    private val variables: Map<String, Any?> = emptyMap(),
+    private val customFunctions: Map<String, NativeFunc> = emptyMap(),
+    private val useCache: Boolean = true
 ) {
 
     /** Builder for KodiScript execution. */
@@ -76,48 +76,48 @@ private constructor(
     fun execute(): ScriptResult {
         // Try to get from cache first
         val program =
-                if (useCache) {
-                    ASTCache.default.get(source)
-                } else {
-                    null
+            if (useCache) {
+                ASTCache.default.get(source)
+            } else {
+                null
+            }
+                ?: run {
+                    // Parse if not cached
+                    val lexer = Lexer(source)
+                    val parser = Parser(lexer)
+                    val parsedProgram = parser.parseProgram()
+
+                    if (parser.errors().isNotEmpty()) {
+                        return ScriptResult(errors = parser.errors())
+                    }
+
+                    // Store in cache
+                    if (useCache) {
+                        ASTCache.default.set(source, parsedProgram)
+                    }
+
+                    parsedProgram
                 }
-                        ?: run {
-                            // Parse if not cached
-                            val lexer = Lexer(source)
-                            val parser = Parser(lexer)
-                            val parsedProgram = parser.parseProgram()
-
-                            if (parser.errors().isNotEmpty()) {
-                                return ScriptResult(errors = parser.errors())
-                            }
-
-                            // Store in cache
-                            if (useCache) {
-                                ASTCache.default.set(source, parsedProgram)
-                            }
-
-                            parsedProgram
-                        }
 
         // Use singleton for built-ins, create copy only if custom functions are registered
         val natives =
-                if (customFunctions.isEmpty()) {
-                    NativeFunctions.shared
-                } else {
-                    NativeFunctions.withBuiltins().apply {
-                        customFunctions.forEach { (name, fn) -> register(name, fn) }
-                    }
+            if (customFunctions.isEmpty()) {
+                NativeFunctions.shared
+            } else {
+                NativeFunctions.withBuiltins().apply {
+                    customFunctions.forEach { (name, fn) -> register(name, fn) }
                 }
+            }
 
         // Interpreter with environment and natives
         val interpreter =
-                if (variables.isNotEmpty()) {
-                    val env = com.kodi.script.interpreter.Environment()
-                    variables.forEach { (k, v) -> env.set(k, v) }
-                    Interpreter(env, natives)
-                } else {
-                    Interpreter(natives = natives)
-                }
+            if (variables.isNotEmpty()) {
+                val env = com.kodi.script.interpreter.Environment()
+                variables.forEach { (k, v) -> env.set(k, v) }
+                Interpreter(env, natives)
+            } else {
+                Interpreter(natives = natives)
+            }
 
         return try {
             val value = interpreter.eval(program)
@@ -149,4 +149,4 @@ private constructor(
 
 /** Exception thrown when script execution fails. */
 class KodiScriptException(val errors: List<String>) :
-        RuntimeException(errors.firstOrNull() ?: "Unknown error")
+    RuntimeException(errors.firstOrNull() ?: "Unknown error")
