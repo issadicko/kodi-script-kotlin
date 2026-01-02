@@ -34,7 +34,8 @@ private constructor(
         private val variables: Map<String, Any?> = emptyMap(),
         private val customFunctions: Map<String, NativeFunc> = emptyMap(),
         private val useCache: Boolean = true,
-        private val maxOps: Long = 0
+        private val maxOps: Long = 0,
+        private val timeoutMs: Long = 0
 ) {
 
     /** Builder for KodiScript execution. */
@@ -43,6 +44,7 @@ private constructor(
         private val customFunctions = mutableMapOf<String, NativeFunc>()
         private var useCache = true
         private var maxOps: Long = 0 // 0 = unlimited
+        private var timeoutMs: Long = 0 // 0 = no timeout
 
         /** Inject host variables into the script context. */
         fun withVariables(vars: Map<String, Any?>): Builder {
@@ -80,9 +82,16 @@ private constructor(
             return this
         }
 
+        /** Set the execution timeout in milliseconds. */
+        fun withTimeout(timeoutMs: Long): Builder {
+            this.timeoutMs = timeoutMs
+            return this
+        }
+
         /** Execute the script. */
         fun execute(): ScriptResult {
-            return KodiScript(source, variables, customFunctions, useCache, maxOps).execute()
+            return KodiScript(source, variables, customFunctions, useCache, maxOps, timeoutMs)
+                    .execute()
         }
     }
 
@@ -136,6 +145,11 @@ private constructor(
         // Apply operation limit if set
         if (maxOps > 0) {
             interpreter.setMaxOperations(maxOps)
+        }
+
+        // Apply timeout if set
+        if (timeoutMs > 0) {
+            interpreter.setDeadline(System.currentTimeMillis() + timeoutMs)
         }
 
         return try {

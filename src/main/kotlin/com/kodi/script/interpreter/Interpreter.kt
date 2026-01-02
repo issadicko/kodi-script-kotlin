@@ -48,6 +48,9 @@ data class NativeFunctionValue(val fn: (List<Any?>) -> Any?)
 /** Exception thrown when max operations is exceeded. */
 class MaxOperationsExceeded : RuntimeException("max operations exceeded")
 
+/** Exception thrown when execution timeout is exceeded. */
+class TimeoutException : RuntimeException("execution timeout")
+
 /** Interpreter evaluates AST nodes. */
 class Interpreter(
         private var env: Environment = Environment(),
@@ -55,6 +58,7 @@ class Interpreter(
 ) {
     private var opCount: Long = 0
     private var maxOps: Long = 0 // 0 = unlimited
+    private var deadline: Long = 0 // 0 = no timeout
 
     companion object {
         fun withVariables(variables: Map<String, Any?>): Interpreter {
@@ -70,6 +74,11 @@ class Interpreter(
         this.opCount = 0
     }
 
+    /** Sets the execution deadline (timestamp in ms). */
+    fun setDeadline(deadline: Long) {
+        this.deadline = deadline
+    }
+
     /** Checks the operation limit and throws if exceeded. */
     private fun checkOperationLimit() {
         if (maxOps > 0) {
@@ -77,6 +86,13 @@ class Interpreter(
             if (opCount > maxOps) {
                 throw MaxOperationsExceeded()
             }
+        }
+    }
+
+    /** Checks if the deadline has been exceeded. */
+    private fun checkDeadline() {
+        if (deadline > 0 && System.currentTimeMillis() > deadline) {
+            throw TimeoutException()
         }
     }
 
@@ -97,6 +113,8 @@ class Interpreter(
     private fun evalStatement(stmt: Statement): Any? {
         // Check operation limit at each statement
         checkOperationLimit()
+        // Check deadline at each statement
+        checkDeadline()
 
         return when (stmt) {
             is VarDecl -> {
@@ -146,6 +164,8 @@ class Interpreter(
         for (item in arr) {
             // Check operation limit at each iteration
             checkOperationLimit()
+            // Check deadline at each iteration
+            checkDeadline()
 
             // Set loop variable
             env.set(varName, item)
