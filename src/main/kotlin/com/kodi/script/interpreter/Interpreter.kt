@@ -135,6 +135,7 @@ class Interpreter(
                 ReturnValue(value)
             }
             is ForStatement -> evalForStatement(stmt)
+            is WhileStatement -> evalWhileStatement(stmt)
         }
     }
 
@@ -169,6 +170,37 @@ class Interpreter(
 
             // Set loop variable
             env.set(varName, item)
+
+            // Execute body
+            val value = evalBlockStatement(stmt.body)
+
+            // Check for return
+            if (value is ReturnValue) {
+                return value
+            }
+
+            result = value
+        }
+
+        return result
+    }
+
+    private fun evalWhileStatement(stmt: WhileStatement): Any? {
+        var result: Any? = null
+
+        while (true) {
+            // Check operation limit at each iteration
+            checkOperationLimit()
+            // Check timeout at each iteration
+            checkDeadline()
+
+            // Evaluate condition
+            val conditionValue = evalExpression(stmt.condition)
+
+            // Exit if condition is false
+            if (!isTruthy(conditionValue)) {
+                break
+            }
 
             // Execute body
             val value = evalBlockStatement(stmt.body)

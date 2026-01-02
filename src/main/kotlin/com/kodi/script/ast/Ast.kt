@@ -66,6 +66,12 @@ data class ForStatement(
     override fun tokenLiteral(): String = token.literal
 }
 
+/** While statement: while (condition) { body } */
+data class WhileStatement(val token: Token, val condition: Expression, val body: BlockStatement) :
+        Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Variable identifier. */
 data class Identifier(val token: Token, val value: String) : Expression {
     override fun tokenLiteral(): String = token.literal

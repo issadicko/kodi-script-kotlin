@@ -60,7 +60,8 @@ enum class TokenType {
         RETURN,
         FOR,
         IN,
-        FN;
+        FN,
+        WHILE;
 
         /** Returns true if this token type can end a statement (for ASI). */
         fun canEndStatement(): Boolean =
@@ -116,7 +117,8 @@ data class Token(val type: TokenType, val literal: String, val line: Int = 1, va
                                 "return" to TokenType.RETURN,
                                 "for" to TokenType.FOR,
                                 "in" to TokenType.IN,
-                                "fn" to TokenType.FN
+                                "fn" to TokenType.FN,
+                                "while" to TokenType.WHILE
                         )
 
                 /** Looks up an identifier to check if it's a keyword. */

@@ -115,6 +115,7 @@ class Parser(private val lexer: Lexer) {
             TokenType.IF -> parseIfStatement()
             TokenType.RETURN -> parseReturnStatement()
             TokenType.FOR -> parseForStatement()
+            TokenType.WHILE -> parseWhileStatement()
             TokenType.IDENT -> {
                 if (peekTokenIs(TokenType.ASSIGN)) parseAssignment() else parseExpressionStatement()
             }
@@ -166,6 +167,28 @@ class Parser(private val lexer: Lexer) {
         val body = parseBlockStatement()
 
         return ForStatement(token, variable, iterable, body)
+    }
+
+    private fun parseWhileStatement(): WhileStatement? {
+        val token = curToken
+
+        // Expect (
+        if (!expectPeek(TokenType.LPAREN)) return null
+
+        // Parse condition
+        nextToken()
+        val condition = parseExpression(LOWEST) ?: return null
+
+        // Expect )
+        if (!expectPeek(TokenType.RPAREN)) return null
+
+        // Expect {
+        if (!expectPeek(TokenType.LBRACE)) return null
+
+        // Parse body
+        val body = parseBlockStatement()
+
+        return WhileStatement(token, condition, body)
     }
 
     private fun parseVarDecl(): VarDecl? {
