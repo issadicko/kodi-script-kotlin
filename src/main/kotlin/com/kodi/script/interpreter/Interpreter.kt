@@ -45,17 +45,38 @@ data class FunctionValue(
 /** Native function wrapper. */
 data class NativeFunctionValue(val fn: (List<Any?>) -> Any?)
 
+/** Exception thrown when max operations is exceeded. */
+class MaxOperationsExceeded : RuntimeException("max operations exceeded")
+
 /** Interpreter evaluates AST nodes. */
 class Interpreter(
         private var env: Environment = Environment(),
         private val natives: NativeFunctions = NativeFunctions.shared
 ) {
+    private var opCount: Long = 0
+    private var maxOps: Long = 0 // 0 = unlimited
 
     companion object {
         fun withVariables(variables: Map<String, Any?>): Interpreter {
             val env = Environment()
             variables.forEach { (k, v) -> env.set(k, v) }
             return Interpreter(env)
+        }
+    }
+
+    /** Sets the maximum number of operations allowed. */
+    fun setMaxOperations(maxOps: Long) {
+        this.maxOps = maxOps
+        this.opCount = 0
+    }
+
+    /** Checks the operation limit and throws if exceeded. */
+    private fun checkOperationLimit() {
+        if (maxOps > 0) {
+            opCount++
+            if (opCount > maxOps) {
+                throw MaxOperationsExceeded()
+            }
         }
     }
 
@@ -74,6 +95,9 @@ class Interpreter(
     fun getOutput(): List<String> = env.getOutput()
 
     private fun evalStatement(stmt: Statement): Any? {
+        // Check operation limit at each statement
+        checkOperationLimit()
+
         return when (stmt) {
             is VarDecl -> {
                 val value = evalExpression(stmt.value)
@@ -120,6 +144,9 @@ class Interpreter(
         val varName = stmt.variable.value
 
         for (item in arr) {
+            // Check operation limit at each iteration
+            checkOperationLimit()
+
             // Set loop variable
             env.set(varName, item)
 

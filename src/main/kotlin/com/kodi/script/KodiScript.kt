@@ -33,7 +33,8 @@ private constructor(
         private val source: String,
         private val variables: Map<String, Any?> = emptyMap(),
         private val customFunctions: Map<String, NativeFunc> = emptyMap(),
-        private val useCache: Boolean = true
+        private val useCache: Boolean = true,
+        private val maxOps: Long = 0
 ) {
 
     /** Builder for KodiScript execution. */
@@ -41,6 +42,7 @@ private constructor(
         private val variables = mutableMapOf<String, Any?>()
         private val customFunctions = mutableMapOf<String, NativeFunc>()
         private var useCache = true
+        private var maxOps: Long = 0 // 0 = unlimited
 
         /** Inject host variables into the script context. */
         fun withVariables(vars: Map<String, Any?>): Builder {
@@ -72,9 +74,15 @@ private constructor(
             return this
         }
 
+        /** Set the maximum number of operations allowed. */
+        fun withMaxOperations(maxOps: Long): Builder {
+            this.maxOps = maxOps
+            return this
+        }
+
         /** Execute the script. */
         fun execute(): ScriptResult {
-            return KodiScript(source, variables, customFunctions, useCache).execute()
+            return KodiScript(source, variables, customFunctions, useCache, maxOps).execute()
         }
     }
 
@@ -124,6 +132,11 @@ private constructor(
                 } else {
                     Interpreter(natives = natives)
                 }
+
+        // Apply operation limit if set
+        if (maxOps > 0) {
+            interpreter.setMaxOperations(maxOps)
+        }
 
         return try {
             val value = interpreter.eval(program)
