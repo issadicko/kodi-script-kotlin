@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.issadicko"
-version = "0.1.0"
+version = "0.1.1"
 
 // Load Maven Central credentials from local file
 val mavenCentralCredentials = Properties().apply {
