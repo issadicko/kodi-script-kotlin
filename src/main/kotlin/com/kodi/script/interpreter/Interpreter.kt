@@ -2,6 +2,11 @@ package com.kodi.script.interpreter
 
 import com.kodi.script.ast.*
 import com.kodi.script.natives.NativeFunctions
+import kotlin.reflect.KCallable
+import kotlin.reflect.KClass
+import kotlin.reflect.full.memberFunctions
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.jvm.isAccessible
 
 /** Environment holds variable bindings. */
 class Environment(private val outer: Environment? = null) {
@@ -295,11 +300,14 @@ class Interpreter(
                                 "cannot access property '${expr.property.value}' on null"
                         )
 
+        // First check for Map access (existing behavior)
         @Suppress("UNCHECKED_CAST")
         if (obj is Map<*, *>) {
             return (obj as Map<String, Any?>)[expr.property.value]
         }
-        throw RuntimeException("cannot access property on ${obj::class.simpleName}")
+
+        // Use reflection to access methods and properties on Kotlin objects
+        return reflectivePropertyAccess(obj, expr.property.value)
     }
 
     private fun evalCallExpr(expr: CallExpr): Any? {
@@ -432,6 +440,112 @@ class Interpreter(
             is Long -> value.toDouble()
             is String -> value.toDoubleOrNull() ?: 0.0
             else -> 0.0
+        }
+    }
+
+    // ============ Reflection Support ============
+
+    /** Uses Kotlin reflection to access properties and methods on objects. */
+    private fun reflectivePropertyAccess(obj: Any, propertyName: String): Any? {
+        val kClass = obj::class
+
+        // Try to find a method first (methods have priority over properties)
+        val method = kClass.memberFunctions.find { it.name == propertyName }
+        if (method != null) {
+            // Return a callable wrapper
+            return NativeFunctionValue { args -> callReflectedMethod(obj, method, args) }
+        }
+
+        // Try to access a property
+        val property = kClass.memberProperties.find { it.name == propertyName }
+        if (property != null) {
+            property.isAccessible = true
+            return convertFromKotlinType(property.call(obj))
+        }
+
+        throw RuntimeException(
+                "property or method '$propertyName' not found on ${kClass.simpleName}"
+        )
+    }
+
+    /** Calls a Kotlin method via reflection with argument type conversion. */
+    private fun callReflectedMethod(instance: Any, method: KCallable<*>, args: List<Any?>): Any? {
+        try {
+            method.isAccessible = true
+
+            // Convert arguments to match parameter types
+            val parameters = method.parameters
+            val convertedArgs = mutableListOf<Any?>()
+
+            // First parameter is the instance (for member functions)
+            convertedArgs.add(instance)
+
+            // Convert remaining arguments
+            for (i in args.indices) {
+                if (i + 1 < parameters.size) {
+                    val param = parameters[i + 1]
+                    val arg = args[i]
+                    convertedArgs.add(convertToKotlinType(arg, param.type))
+                } else {
+                    convertedArgs.add(args[i])
+                }
+            }
+
+            val result = method.call(*convertedArgs.toTypedArray())
+            return convertFromKotlinType(result)
+        } catch (e: Exception) {
+            throw RuntimeException("error calling method '${method.name}': ${e.message}", e)
+        }
+    }
+
+    /** Converts a KodiScript value to the target Kotlin type. */
+    private fun convertToKotlinType(value: Any?, targetType: kotlin.reflect.KType): Any? {
+        if (value == null) return null
+
+        val classifier = targetType.classifier
+        if (classifier !is KClass<*>) return value
+
+        return when (classifier) {
+            Int::class ->
+                    when (value) {
+                        is Double -> value.toInt()
+                        is Int -> value
+                        else -> value.toString().toIntOrNull() ?: 0
+                    }
+            Long::class ->
+                    when (value) {
+                        is Double -> value.toLong()
+                        is Int -> value.toLong()
+                        is Long -> value
+                        else -> value.toString().toLongOrNull() ?: 0L
+                    }
+            Float::class ->
+                    when (value) {
+                        is Double -> value.toFloat()
+                        is Float -> value
+                        else -> value.toString().toFloatOrNull() ?: 0f
+                    }
+            Double::class -> toNumber(value)
+            String::class -> value.toString()
+            Boolean::class ->
+                    when (value) {
+                        is Boolean -> value
+                        else -> isTruthy(value)
+                    }
+            else -> value // Return as-is for complex types
+        }
+    }
+
+    /** Converts a Kotlin value to a KodiScript-compatible value. */
+    private fun convertFromKotlinType(value: Any?): Any? {
+        return when (value) {
+            null -> null
+            is Int -> value.toDouble()
+            is Long -> value.toDouble()
+            is Float -> value.toDouble()
+            is Short -> value.toDouble()
+            is Byte -> value.toDouble()
+            else -> value // String, Double, Boolean, custom objects
         }
     }
 }
