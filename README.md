@@ -25,14 +25,14 @@ Imaginez : un admin qui configure des règles de validation, un workflow qui s'a
 
 ```kotlin
 dependencies {
-    implementation("io.github.issadicko:kodi-script:0.0.1")
+    implementation("io.github.issadicko:kodi-script:0.1.1")
 }
 ```
 
 ### Gradle Groovy
 
 ```groovy
-implementation 'io.github.issadicko:kodi-script:0.0.1'
+implementation 'io.github.issadicko:kodi-script:0.1.1'
 ```
 
 ### Maven
@@ -41,7 +41,7 @@ implementation 'io.github.issadicko:kodi-script:0.0.1'
 <dependency>
     <groupId>io.github.issadicko</groupId>
     <artifactId>kodi-script</artifactId>
-    <version>0.0.1</version>
+    <version>0.1.1</version>
 </dependency>
 ```
 
