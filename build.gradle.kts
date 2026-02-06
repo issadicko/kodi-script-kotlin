@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.issadicko"
-version = "0.1.1"
+version = "0.2.0"
 
 // Load Maven Central credentials from local file
 val mavenCentralCredentials = Properties().apply {
@@ -56,7 +56,7 @@ mavenPublishing {
     
     pom {
         name.set("KodiScript")
-        description.set("KodiScript v0.0.1 interpreter for Kotlin/Spring Boot")
+        description.set("KodiScript v0.2.0 interpreter for Kotlin/Spring Boot")
         url.set("https://github.com/issadicko/kodi-script-kotlin")
         
         licenses {
