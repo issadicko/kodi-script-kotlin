@@ -763,4 +763,116 @@ big
                 assertFalse(addHoursResult.hasErrors)
                 assertEquals(1.0, addHoursResult.value)
         }
+        @Test
+        fun `test single quote strings`() {
+                val result = KodiScript.run("let s = 'hello world'; s")
+                assertFalse(result.hasErrors)
+                assertEquals("hello world", result.value)
+
+                val escaped = KodiScript.run("let s = 'hello \\'world\\''; s")
+                assertFalse(escaped.hasErrors)
+                assertEquals("hello 'world'", escaped.value)
+
+                val mixed = KodiScript.run("let s = \"hello 'world'\"; s")
+                assertFalse(mixed.hasErrors)
+                assertEquals("hello 'world'", mixed.value)
+
+                val mixed2 = KodiScript.run("let s = 'hello \"world\"'; s")
+                assertFalse(mixed2.hasErrors)
+                assertEquals("hello \"world\"", mixed2.value)
+        }
+
+        @Test
+        fun `test multiline object literals`() {
+                // Test multiline without commas (using newlines)
+                val result =
+                        KodiScript.run(
+                                """
+                        let obj = {
+                            name: "Kodi"
+                            age: 10
+                            active: true
+                        }
+                        obj.name
+                        """
+                        )
+                assertFalse(result.hasErrors, "Errors: ${result.errors}")
+                assertEquals("Kodi", result.value)
+
+                // Test multiline with mixed commas and newlines
+                val resultMixed =
+                        KodiScript.run(
+                                """
+                        let obj = {
+                            name: "Kodi",
+                            age: 10
+                            active: true,
+                        }
+                        obj.age
+                        """
+                        )
+                assertFalse(resultMixed.hasErrors, "Errors: ${resultMixed.errors}")
+                assertEquals(10.0, resultMixed.value)
+
+                // Test multiline with empty lines
+                val resultEmptyLines =
+                        KodiScript.run(
+                                """
+                        let obj = {
+                            
+                            name: "Kodi"
+                            
+                            age: 10
+                        }
+                        obj.age
+                        """
+                        )
+                assertFalse(resultEmptyLines.hasErrors, "Errors: ${resultEmptyLines.errors}")
+                assertEquals(10.0, resultEmptyLines.value)
+        }
+
+        @Test
+        fun `test backtick strings`() {
+                // Basic backtick string
+                val basic = KodiScript.run("let s = `hello world`; s")
+                assertFalse(basic.hasErrors)
+                assertEquals("hello world", basic.value)
+
+                // Multi-line backtick string
+                val multiline =
+                        KodiScript.run(
+                                """
+                        let s = `hello
+                        world`;
+                        s
+                        """
+                        )
+                assertFalse(multiline.hasErrors)
+                // Note: indentation in the kotlin multiline string is preserved in the script
+                // source
+                // but the backtick string captures the newline and indentation inside it.
+                // The expected string depends on how the test source is formatted.
+                // To avoid fragility with indentation, we just check it contains the newline and
+                // words.
+                val valStr = multiline.value as String
+                assertTrue(valStr.contains("hello"))
+                assertTrue(valStr.contains("world"))
+                assertTrue(valStr.contains("\n"))
+
+                // Interpolation in backticks (should work as normal)
+                val interpolation =
+                        KodiScript.run(
+                                """
+                        let name = "Kodi"
+                        `Hello ${"$"}{name}`
+                        """
+                        )
+                assertFalse(interpolation.hasErrors)
+                assertEquals("Hello Kodi", interpolation.value)
+
+                // Backticks with quotes inside
+                val quotes = KodiScript.run("`result: \"success\", 'ok'`")
+                assertFalse(quotes.hasErrors)
+                assertEquals("result: \"success\", 'ok'", quotes.value)
+        }
 }

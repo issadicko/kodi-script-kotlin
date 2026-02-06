@@ -411,6 +411,12 @@ class Parser(private val lexer: Lexer) {
         }
 
         while (!peekTokenIs(TokenType.RBRACE)) {
+            // Skip newlines before keys
+            while (peekTokenIs(TokenType.NEWLINE)) {
+                nextToken()
+            }
+            if (peekTokenIs(TokenType.RBRACE)) break
+
             nextToken()
             // Support both string "key" and identifier key
             val key =
@@ -429,8 +435,18 @@ class Parser(private val lexer: Lexer) {
             val value = parseExpression(LOWEST) ?: return null
             pairs[key] = value
 
-            if (!peekTokenIs(TokenType.RBRACE) && !expectPeek(TokenType.COMMA)) {
+            // Separator can be COMMA or NEWLINE
+            if (!peekTokenIs(TokenType.RBRACE) &&
+                            !peekTokenIs(TokenType.COMMA) &&
+                            !peekTokenIs(TokenType.NEWLINE)
+            ) {
+                addError("expected comma, newline or }")
                 return null
+            }
+
+            // Consume comma if present, newlines are skipped at start of loop
+            if (peekTokenIs(TokenType.COMMA)) {
+                nextToken()
             }
         }
 

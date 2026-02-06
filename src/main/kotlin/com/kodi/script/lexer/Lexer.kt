@@ -106,8 +106,8 @@ class Lexer(private val input: String) {
                     '[' -> newToken(TokenType.LBRACKET)
                     ']' -> newToken(TokenType.RBRACKET)
                     '.' -> newToken(TokenType.DOT)
-                    '"' -> {
-                        val (str, isTemplate) = readString()
+                    '"', '\'', '`' -> {
+                        val (str, isTemplate) = readString(ch)
                         val type = if (isTemplate) TokenType.STRING_TEMPLATE else TokenType.STRING
                         Token(type, str, line, column)
                     }
@@ -187,17 +187,19 @@ class Lexer(private val input: String) {
         return input.substring(startPos, position)
     }
 
-    private fun readString(): Pair<String, Boolean> {
+    private fun readString(quote: Char): Pair<String, Boolean> {
         val result = StringBuilder()
         var isTemplate = false
         readChar() // skip opening quote
-        while (ch != '"' && ch != '\u0000') {
+        while (ch != quote && ch != '\u0000') {
             if (ch == '\\') {
                 readChar()
                 when (ch) {
                     'n' -> result.append('\n')
                     't' -> result.append('\t')
                     '"' -> result.append('"')
+                    '\'' -> result.append('\'')
+                    '`' -> result.append('`')
                     '\\' -> result.append('\\')
                     '$' -> result.append('$')
                     else -> result.append(ch)
@@ -208,6 +210,10 @@ class Lexer(private val input: String) {
                 result.append('$')
                 result.append('{')
                 readChar() // consume $
+            } else if (ch == '\n') {
+                result.append('\n')
+                line++
+                column = 0
             } else {
                 result.append(ch)
             }
