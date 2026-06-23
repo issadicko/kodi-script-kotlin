@@ -29,6 +29,11 @@ class Lexer(private val input: String) {
     fun nextToken(): Token {
         skipWhitespace()
 
+        // Column of the first character of the token, so multi-character tokens
+        // (identifiers, numbers, strings) report their start position — matching
+        // the Go implementation rather than the position after consumption.
+        val startColumn = column
+
         val tok: Token =
                 when (ch) {
                     '=' ->
@@ -38,16 +43,53 @@ class Lexer(private val input: String) {
                             } else {
                                 newToken(TokenType.ASSIGN)
                             }
-                    '+' -> newToken(TokenType.PLUS)
-                    '-' -> newToken(TokenType.MINUS)
-                    '*' -> newToken(TokenType.ASTERISK)
-                    '/' -> {
-                        if (peekChar() == '/') {
-                            skipLineComment()
-                            return nextToken()
-                        }
-                        newToken(TokenType.SLASH)
-                    }
+                    '+' ->
+                            when (peekChar()) {
+                                '+' -> {
+                                    readChar()
+                                    Token(TokenType.PLUS_PLUS, "++", line, column - 1)
+                                }
+                                '=' -> {
+                                    readChar()
+                                    Token(TokenType.PLUS_EQ, "+=", line, column - 1)
+                                }
+                                else -> newToken(TokenType.PLUS)
+                            }
+                    '-' ->
+                            when (peekChar()) {
+                                '-' -> {
+                                    readChar()
+                                    Token(TokenType.MINUS_MINUS, "--", line, column - 1)
+                                }
+                                '=' -> {
+                                    readChar()
+                                    Token(TokenType.MINUS_EQ, "-=", line, column - 1)
+                                }
+                                else -> newToken(TokenType.MINUS)
+                            }
+                    '*' ->
+                            if (peekChar() == '=') {
+                                readChar()
+                                Token(TokenType.ASTERISK_EQ, "*=", line, column - 1)
+                            } else {
+                                newToken(TokenType.ASTERISK)
+                            }
+                    '/' ->
+                            when (peekChar()) {
+                                '/' -> {
+                                    skipLineComment()
+                                    return nextToken()
+                                }
+                                '*' -> {
+                                    skipBlockComment()
+                                    return nextToken()
+                                }
+                                '=' -> {
+                                    readChar()
+                                    Token(TokenType.SLASH_EQ, "/=", line, column - 1)
+                                }
+                                else -> newToken(TokenType.SLASH)
+                            }
                     '%' -> newToken(TokenType.PERCENT)
                     '!' ->
                             if (peekChar() == '=') {
@@ -94,7 +136,7 @@ class Lexer(private val input: String) {
                                     readChar()
                                     Token(TokenType.ELVIS, "?:", line, column - 1)
                                 }
-                                else -> newToken(TokenType.ILLEGAL)
+                                else -> newToken(TokenType.QUESTION)
                             }
                     ',' -> newToken(TokenType.COMMA)
                     ';' -> newToken(TokenType.SEMICOLON)
@@ -105,11 +147,22 @@ class Lexer(private val input: String) {
                     '}' -> newToken(TokenType.RBRACE)
                     '[' -> newToken(TokenType.LBRACKET)
                     ']' -> newToken(TokenType.RBRACKET)
-                    '.' -> newToken(TokenType.DOT)
+                    '.' ->
+                            if (peekChar() == '.') {
+                                readChar() // consume 2nd '.'
+                                if (peekChar() == '.') {
+                                    readChar() // consume 3rd '.'
+                                    Token(TokenType.ELLIPSIS, "...", line, column - 2)
+                                } else {
+                                    newToken(TokenType.ILLEGAL)
+                                }
+                            } else {
+                                newToken(TokenType.DOT)
+                            }
                     '"', '\'', '`' -> {
                         val (str, isTemplate) = readString(ch)
                         val type = if (isTemplate) TokenType.STRING_TEMPLATE else TokenType.STRING
-                        Token(type, str, line, column)
+                        Token(type, str, line, startColumn)
                     }
                     '\n' -> {
                         val result =
@@ -131,13 +184,13 @@ class Lexer(private val input: String) {
                             ch.isLetter() || ch == '_' -> {
                                 val ident = readIdentifier()
                                 val type = Token.lookupIdent(ident)
-                                val token = Token(type, ident, line, column)
+                                val token = Token(type, ident, line, startColumn)
                                 prevToken = token
                                 return token
                             }
                             ch.isDigit() -> {
                                 val num = readNumber()
-                                val token = Token(TokenType.NUMBER, num, line, column)
+                                val token = Token(TokenType.NUMBER, num, line, startColumn)
                                 prevToken = token
                                 return token
                             }
@@ -161,6 +214,24 @@ class Lexer(private val input: String) {
 
     private fun skipLineComment() {
         while (ch != '\n' && ch != '\u0000') {
+            readChar()
+        }
+    }
+
+    /** Skips a block comment. On entry ch is '/', peek is '*'. */
+    private fun skipBlockComment() {
+        readChar() // consume '/'
+        readChar() // consume '*'
+        while (ch != '\u0000') {
+            if (ch == '*' && peekChar() == '/') {
+                readChar() // consume '*'
+                readChar() // consume '/'
+                return
+            }
+            if (ch == '\n') {
+                line++
+                column = 0
+            }
             readChar()
         }
     }

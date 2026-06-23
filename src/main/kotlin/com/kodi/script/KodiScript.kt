@@ -2,16 +2,28 @@ package com.kodi.script
 
 import com.kodi.script.cache.ASTCache
 import com.kodi.script.interpreter.Interpreter
+import com.kodi.script.interpreter.MaxOperationsExceeded
+import com.kodi.script.interpreter.TimeoutException
 import com.kodi.script.lexer.Lexer
 import com.kodi.script.natives.NativeFunc
 import com.kodi.script.natives.NativeFunctions
 import com.kodi.script.parser.Parser
 
+/** Classifies why execution failed, for programmatic handling. */
+enum class ErrorKind {
+    NONE,
+    PARSE,
+    RUNTIME,
+    TIMEOUT,
+    MAX_OPERATIONS
+}
+
 /** Result of script execution. */
 data class ScriptResult(
         val value: Any? = null,
         val output: List<String> = emptyList(),
-        val errors: List<String> = emptyList()
+        val errors: List<String> = emptyList(),
+        val errorKind: ErrorKind = ErrorKind.NONE
 ) {
     val hasErrors: Boolean
         get() = errors.isNotEmpty()
@@ -35,7 +47,9 @@ private constructor(
         private val customFunctions: Map<String, NativeFunc> = emptyMap(),
         private val useCache: Boolean = true,
         private val maxOps: Long = 0,
-        private val timeoutMs: Long = 0
+        private val timeoutMs: Long = 0,
+        private val silent: Boolean = false,
+        private val outputSink: ((String) -> Unit)? = null
 ) {
 
     /** Builder for KodiScript execution. */
@@ -45,6 +59,8 @@ private constructor(
         private var useCache = true
         private var maxOps: Long = 0 // 0 = unlimited
         private var timeoutMs: Long = 0 // 0 = no timeout
+        private var silent = false // suppress stdout from print()
+        private var outputSink: ((String) -> Unit)? = null // route print() to a callback
 
         /** Inject host variables into the script context. */
         fun withVariables(vars: Map<String, Any?>): Builder {
@@ -88,9 +104,30 @@ private constructor(
             return this
         }
 
+        /** Suppress stdout from print(); output is still captured in the result. */
+        fun withSilentPrint(silent: Boolean): Builder {
+            this.silent = silent
+            return this
+        }
+
+        /** Route print() output to [sink] instead of stdout. Output is still captured. */
+        fun withOutput(sink: (String) -> Unit): Builder {
+            this.outputSink = sink
+            return this
+        }
+
         /** Execute the script. */
         fun execute(): ScriptResult {
-            return KodiScript(source, variables, customFunctions, useCache, maxOps, timeoutMs)
+            return KodiScript(
+                            source,
+                            variables,
+                            customFunctions,
+                            useCache,
+                            maxOps,
+                            timeoutMs,
+                            silent,
+                            outputSink
+                    )
                     .execute()
         }
     }
@@ -111,7 +148,10 @@ private constructor(
                             val parsedProgram = parser.parseProgram()
 
                             if (parser.errors().isNotEmpty()) {
-                                return ScriptResult(errors = parser.errors())
+                                return ScriptResult(
+                                        errors = parser.errors(),
+                                        errorKind = ErrorKind.PARSE
+                                )
                             }
 
                             // Store in cache
@@ -152,11 +192,37 @@ private constructor(
             interpreter.setDeadline(System.currentTimeMillis() + timeoutMs)
         }
 
+        // Apply silent print setting (output is still captured in the result)
+        interpreter.setSilent(silent)
+
+        // Route print() to a custom sink if provided
+        outputSink?.let { interpreter.setOutputSink(it) }
+
         return try {
             val value = interpreter.eval(program)
             ScriptResult(value = value, output = interpreter.getOutput())
+        } catch (e: MaxOperationsExceeded) {
+            ScriptResult(
+                    errors = listOf(e.message ?: "max operations exceeded"),
+                    errorKind = ErrorKind.MAX_OPERATIONS
+            )
+        } catch (e: TimeoutException) {
+            ScriptResult(
+                    errors = listOf(e.message ?: "execution timeout"),
+                    errorKind = ErrorKind.TIMEOUT
+            )
+        } catch (e: StackOverflowError) {
+            // Backstop in case deep recursion exhausts the JVM stack before the
+            // interpreter's own call-depth guard fires.
+            ScriptResult(
+                    errors = listOf("maximum call depth exceeded"),
+                    errorKind = ErrorKind.RUNTIME
+            )
         } catch (e: Exception) {
-            ScriptResult(errors = listOf(e.message ?: "Unknown error"))
+            ScriptResult(
+                    errors = listOf(e.message ?: "Unknown error"),
+                    errorKind = ErrorKind.RUNTIME
+            )
         }
     }
 
