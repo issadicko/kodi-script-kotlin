@@ -13,28 +13,26 @@ import kotlin.random.Random
 typealias NativeFunc = (List<Any?>) -> Any?
 
 /** Registry of native functions for KodiScript. */
-class NativeFunctions private constructor() {
+class NativeFunctions private constructor(private val fallback: NativeFunctions? = null) {
     private val functions = mutableMapOf<String, NativeFunc>()
 
     companion object {
         /** Shared singleton instance for built-in functions. */
         val shared: NativeFunctions by lazy { NativeFunctions().apply { registerBuiltins() } }
 
-        /** Create a new instance with built-in functions (for custom functions). */
-        fun withBuiltins(): NativeFunctions {
-            return NativeFunctions().apply { copyFrom(shared) }
-        }
+        /**
+         * Create a registry for per-script custom functions that falls back to the
+         * shared builtins. Layered lookup avoids copying the ~80 builtins on every
+         * execution that registers custom functions.
+         */
+        fun withBuiltins(): NativeFunctions = NativeFunctions(fallback = shared)
     }
 
-    fun get(name: String): NativeFunc? = functions[name]
+    /** Custom functions take priority; unknown names fall back to the builtins. */
+    fun get(name: String): NativeFunc? = functions[name] ?: fallback?.get(name)
 
     fun register(name: String, fn: NativeFunc) {
         functions[name] = fn
-    }
-
-    /** Copy all functions from another instance. */
-    private fun copyFrom(other: NativeFunctions) {
-        functions.putAll(other.functions)
     }
 
     private fun registerBuiltins() {
@@ -110,6 +108,27 @@ class NativeFunctions private constructor() {
         functions["first"] = ::nativeFirst
         functions["last"] = ::nativeLast
         functions["slice"] = ::nativeSlice
+        functions["range"] = ::nativeRange
+        functions["sum"] = ::nativeSum
+        functions["avg"] = ::nativeAvg
+        functions["unique"] = ::nativeUnique
+        functions["flatten"] = ::nativeFlatten
+        functions["push"] = ::nativePush
+        functions["concat"] = ::nativeConcat
+
+        // Object functions
+        functions["keys"] = ::nativeKeys
+        functions["values"] = ::nativeValues
+        functions["entries"] = ::nativeEntries
+        functions["has"] = ::nativeHas
+
+        // Number parsing
+        functions["parseInt"] = ::nativeParseInt
+        functions["parseFloat"] = ::nativeParseFloat
+
+        // Regex
+        functions["regexMatch"] = ::nativeRegexMatch
+        functions["regexReplace"] = ::nativeRegexReplace
 
         // Date/Time functions
         functions["now"] = ::nativeNow
@@ -134,7 +153,7 @@ class NativeFunctions private constructor() {
 
     private fun nativeToString(args: List<Any?>): String {
         require(args.size == 1) { "toString requires 1 argument" }
-        return args[0]?.toString() ?: "null"
+        return kodiStringify(args[0])
     }
 
     private fun nativeToNumber(args: List<Any?>): Double {
@@ -241,7 +260,7 @@ class NativeFunctions private constructor() {
                         ?: throw IllegalArgumentException(
                                 "join requires a string as second argument"
                         )
-        return arr.joinToString(sep) { it?.toString() ?: "null" }
+        return arr.joinToString(sep) { kodiStringify(it) }
     }
 
     private fun nativeReplace(args: List<Any?>): String {
@@ -326,7 +345,7 @@ class NativeFunctions private constructor() {
 
     private fun nativePadLeft(args: List<Any?>): String {
         require(args.size >= 2) { "padLeft requires at least 2 arguments" }
-        val str = args[0]?.toString() ?: ""
+        val str = kodiStringify(args[0])
         val length = (args[1] as? Number)?.toInt() ?: 0
         val padChar = if (args.size > 2) (args[2]?.toString()?.firstOrNull() ?: ' ') else ' '
         return str.padStart(length, padChar)
@@ -334,7 +353,7 @@ class NativeFunctions private constructor() {
 
     private fun nativePadRight(args: List<Any?>): String {
         require(args.size >= 2) { "padRight requires at least 2 arguments" }
-        val str = args[0]?.toString() ?: ""
+        val str = kodiStringify(args[0])
         val length = (args[1] as? Number)?.toInt() ?: 0
         val padChar = if (args.size > 2) (args[2]?.toString()?.firstOrNull() ?: ' ') else ' '
         return str.padEnd(length, padChar)
@@ -342,7 +361,7 @@ class NativeFunctions private constructor() {
 
     private fun nativeRepeat(args: List<Any?>): String {
         require(args.size >= 2) { "repeat requires 2 arguments" }
-        val str = args[0]?.toString() ?: ""
+        val str = kodiStringify(args[0])
         val count = (args[1] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0
         return str.repeat(count)
     }
@@ -354,12 +373,20 @@ class NativeFunctions private constructor() {
         val str =
                 args[0] as? String
                         ?: throw IllegalArgumentException("jsonParse requires a string argument")
-        return parseSimpleJson(str)
+        val parser = JsonParser(str)
+        val value = parser.parseValue()
+        parser.skipWhitespace()
+        if (!parser.atEnd()) {
+            throw IllegalArgumentException("invalid JSON: unexpected trailing characters")
+        }
+        return value
     }
 
     private fun nativeJsonStringify(args: List<Any?>): String {
         require(args.size == 1) { "jsonStringify requires 1 argument" }
-        return stringifyValue(args[0])
+        val sb = StringBuilder()
+        stringifyValue(args[0], sb)
+        return sb.toString()
     }
 
     // ============ Base64 functions ============
@@ -717,59 +744,410 @@ class NativeFunctions private constructor() {
         return null
     }
 
-    private fun parseSimpleJson(str: String): Any? {
-        val trimmed = str.trim()
-        return when {
-            trimmed == "null" -> null
-            trimmed == "true" -> true
-            trimmed == "false" -> false
-            trimmed.startsWith("\"") && trimmed.endsWith("\"") ->
-                    trimmed.substring(1, trimmed.length - 1)
-            trimmed.startsWith("[") && trimmed.endsWith("]") -> parseJsonArray(trimmed)
-            trimmed.startsWith("{") && trimmed.endsWith("}") -> parseJsonObject(trimmed)
-            trimmed.toDoubleOrNull() != null -> trimmed.toDouble()
-            else -> throw IllegalArgumentException("invalid JSON: $str")
+    // ============ More array functions ============
+
+    private fun nativeRange(args: List<Any?>): List<Any?> {
+        val start: Int
+        val end: Int
+        when (args.size) {
+            1 -> {
+                start = 0
+                end = toDouble(args[0]).toInt()
+            }
+            2 -> {
+                start = toDouble(args[0]).toInt()
+                end = toDouble(args[1]).toInt()
+            }
+            else -> throw IllegalArgumentException("range requires 1 or 2 arguments")
         }
+        if (end <= start) return emptyList()
+        return (start until end).map { it.toDouble() }
     }
 
-    private fun parseJsonArray(str: String): List<Any?> {
-        val content = str.substring(1, str.length - 1).trim()
-        if (content.isEmpty()) return emptyList()
-        return content.split(",").map { parseSimpleJson(it.trim()) }
+    private fun nativeSum(args: List<Any?>): Double {
+        require(args.size == 1) { "sum requires 1 argument" }
+        val arr =
+                args[0] as? List<*>
+                        ?: throw IllegalArgumentException("sum requires an array argument")
+        return arr.sumOf { toDouble(it) }
     }
 
-    private fun parseJsonObject(str: String): Map<String, Any?> {
-        val content = str.substring(1, str.length - 1).trim()
-        if (content.isEmpty()) return emptyMap()
-        val result = mutableMapOf<String, Any?>()
-        for (pair in content.split(",")) {
-            val (key, value) =
-                    pair.split(":").let {
-                        it[0].trim().removeSurrounding("\"") to
-                                parseSimpleJson(it.getOrElse(1) { "null" }.trim())
-                    }
-            result[key] = value
+    private fun nativeAvg(args: List<Any?>): Double {
+        require(args.size == 1) { "avg requires 1 argument" }
+        val arr =
+                args[0] as? List<*>
+                        ?: throw IllegalArgumentException("avg requires an array argument")
+        if (arr.isEmpty()) return 0.0
+        return arr.sumOf { toDouble(it) } / arr.size
+    }
+
+    private fun nativeUnique(args: List<Any?>): List<Any?> {
+        require(args.size == 1) { "unique requires 1 argument" }
+        val arr =
+                args[0] as? List<*>
+                        ?: throw IllegalArgumentException("unique requires an array argument")
+        return arr.distinct()
+    }
+
+    private fun nativeFlatten(args: List<Any?>): List<Any?> {
+        require(args.size == 1) { "flatten requires 1 argument" }
+        val arr =
+                args[0] as? List<*>
+                        ?: throw IllegalArgumentException("flatten requires an array argument")
+        val result = mutableListOf<Any?>()
+        for (v in arr) {
+            if (v is List<*>) result.addAll(v) else result.add(v)
         }
         return result
     }
 
-    private fun stringifyValue(value: Any?): String {
-        return when (value) {
-            null -> "null"
-            is String -> "\"$value\""
-            is Boolean -> value.toString()
-            is Number -> value.toString()
+    private fun nativePush(args: List<Any?>): List<Any?> {
+        require(args.size >= 2) { "push requires at least 2 arguments (array, item...)" }
+        val arr =
+                args[0] as? List<*>
+                        ?: throw IllegalArgumentException("push requires an array as first argument")
+        return arr + args.subList(1, args.size)
+    }
+
+    private fun nativeConcat(args: List<Any?>): List<Any?> {
+        val result = mutableListOf<Any?>()
+        for (a in args) {
+            val arr =
+                    a as? List<*>
+                            ?: throw IllegalArgumentException("concat requires array arguments")
+            result.addAll(arr)
+        }
+        return result
+    }
+
+    // ============ Object functions ============
+
+    @Suppress("UNCHECKED_CAST")
+    private fun asObject(value: Any?, fn: String): Map<String, Any?> =
+            value as? Map<String, Any?>
+                    ?: throw IllegalArgumentException("$fn requires an object argument")
+
+    private fun nativeKeys(args: List<Any?>): List<Any?> {
+        require(args.size == 1) { "keys requires 1 argument" }
+        return asObject(args[0], "keys").keys.sorted()
+    }
+
+    private fun nativeValues(args: List<Any?>): List<Any?> {
+        require(args.size == 1) { "values requires 1 argument" }
+        val m = asObject(args[0], "values")
+        return m.keys.sorted().map { m[it] }
+    }
+
+    private fun nativeEntries(args: List<Any?>): List<Any?> {
+        require(args.size == 1) { "entries requires 1 argument" }
+        val m = asObject(args[0], "entries")
+        return m.keys.sorted().map { listOf<Any?>(it, m[it]) }
+    }
+
+    private fun nativeHas(args: List<Any?>): Boolean {
+        require(args.size == 2) { "has requires 2 arguments" }
+        return when (val coll = args[0]) {
+            is Map<*, *> -> coll.containsKey(args[1])
+            is List<*> -> coll.contains(args[1])
+            else ->
+                    throw IllegalArgumentException(
+                            "has requires an object or array as first argument"
+                    )
+        }
+    }
+
+    // ============ Number parsing ============
+
+    private fun nativeParseInt(args: List<Any?>): Double {
+        require(args.size == 1) { "parseInt requires 1 argument" }
+        return when (val v = args[0]) {
+            is Double -> truncate(v)
+            is Int -> v.toDouble()
+            is Long -> v.toDouble()
+            is String ->
+                    truncate(
+                            v.trim().toDoubleOrNull()
+                                    ?: throw IllegalArgumentException(
+                                            "cannot parse '$v' as integer"
+                                    )
+                    )
+            else -> throw IllegalArgumentException("parseInt requires a string or number")
+        }
+    }
+
+    private fun nativeParseFloat(args: List<Any?>): Double {
+        require(args.size == 1) { "parseFloat requires 1 argument" }
+        return when (val v = args[0]) {
+            is Double -> v
+            is Int -> v.toDouble()
+            is Long -> v.toDouble()
+            is String ->
+                    v.trim().toDoubleOrNull()
+                            ?: throw IllegalArgumentException("cannot parse '$v' as number")
+            else -> throw IllegalArgumentException("parseFloat requires a string or number")
+        }
+    }
+
+    // ============ Regex ============
+
+    private fun nativeRegexMatch(args: List<Any?>): Boolean {
+        require(args.size == 2) { "regexMatch requires 2 arguments (string, pattern)" }
+        val s =
+                args[0] as? String
+                        ?: throw IllegalArgumentException(
+                                "regexMatch requires a string as first argument"
+                        )
+        val pat =
+                args[1] as? String
+                        ?: throw IllegalArgumentException("regexMatch requires a string pattern")
+        return Regex(pat).containsMatchIn(s)
+    }
+
+    private fun nativeRegexReplace(args: List<Any?>): String {
+        require(args.size == 3) {
+            "regexReplace requires 3 arguments (string, pattern, replacement)"
+        }
+        val s =
+                args[0] as? String
+                        ?: throw IllegalArgumentException(
+                                "regexReplace requires a string as first argument"
+                        )
+        val pat =
+                args[1] as? String
+                        ?: throw IllegalArgumentException("regexReplace requires a string pattern")
+        val repl =
+                args[2] as? String
+                        ?: throw IllegalArgumentException(
+                                "regexReplace requires a string replacement"
+                        )
+        return Regex(pat).replace(s, repl)
+    }
+
+    /**
+     * Minimal but correct recursive-descent JSON parser. Handles nested objects
+     * and arrays, escaped strings (including commas/colons inside strings),
+     * unicode escapes, and the full JSON number grammar. Produces KodiScript
+     * values: Double, String, Boolean, null, List, and (linked) Map.
+     */
+    private class JsonParser(private val s: String) {
+        private var i = 0
+
+        fun atEnd(): Boolean = i >= s.length
+
+        fun skipWhitespace() {
+            while (i < s.length && s[i].isWhitespace()) i++
+        }
+
+        fun parseValue(): Any? {
+            skipWhitespace()
+            if (atEnd()) throw IllegalArgumentException("invalid JSON: unexpected end of input")
+            return when (s[i]) {
+                '{' -> parseObject()
+                '[' -> parseArray()
+                '"' -> parseString()
+                't',
+                'f' -> parseBoolean()
+                'n' -> parseNull()
+                else -> parseNumber()
+            }
+        }
+
+        private fun expect(c: Char) {
+            if (atEnd() || s[i] != c) {
+                throw IllegalArgumentException("invalid JSON: expected '$c' at position $i")
+            }
+            i++
+        }
+
+        private fun parseObject(): Map<String, Any?> {
+            expect('{')
+            val result = LinkedHashMap<String, Any?>()
+            skipWhitespace()
+            if (!atEnd() && s[i] == '}') {
+                i++
+                return result
+            }
+            while (true) {
+                skipWhitespace()
+                if (atEnd() || s[i] != '"') {
+                    throw IllegalArgumentException("invalid JSON: expected string key")
+                }
+                val key = parseString()
+                skipWhitespace()
+                expect(':')
+                result[key] = parseValue()
+                skipWhitespace()
+                if (atEnd()) throw IllegalArgumentException("invalid JSON: unterminated object")
+                when (s[i]) {
+                    ',' -> i++
+                    '}' -> {
+                        i++
+                        return result
+                    }
+                    else -> throw IllegalArgumentException("invalid JSON: expected ',' or '}'")
+                }
+            }
+        }
+
+        private fun parseArray(): List<Any?> {
+            expect('[')
+            val result = ArrayList<Any?>()
+            skipWhitespace()
+            if (!atEnd() && s[i] == ']') {
+                i++
+                return result
+            }
+            while (true) {
+                result.add(parseValue())
+                skipWhitespace()
+                if (atEnd()) throw IllegalArgumentException("invalid JSON: unterminated array")
+                when (s[i]) {
+                    ',' -> i++
+                    ']' -> {
+                        i++
+                        return result
+                    }
+                    else -> throw IllegalArgumentException("invalid JSON: expected ',' or ']'")
+                }
+            }
+        }
+
+        private fun parseString(): String {
+            expect('"')
+            val sb = StringBuilder()
+            while (!atEnd() && s[i] != '"') {
+                val c = s[i]
+                if (c == '\\') {
+                    i++
+                    if (atEnd()) break
+                    when (s[i]) {
+                        '"' -> sb.append('"')
+                        '\\' -> sb.append('\\')
+                        '/' -> sb.append('/')
+                        'n' -> sb.append('\n')
+                        't' -> sb.append('\t')
+                        'r' -> sb.append('\r')
+                        'b' -> sb.append('\b')
+                        'f' -> sb.append('\u000C')
+                        'u' -> {
+                            if (i + 4 >= s.length) {
+                                throw IllegalArgumentException("invalid JSON: bad unicode escape")
+                            }
+                            val hex = s.substring(i + 1, i + 5)
+                            sb.append(
+                                    hex.toIntOrNull(16)?.toChar()
+                                            ?: throw IllegalArgumentException(
+                                                    "invalid JSON: bad unicode escape"
+                                            )
+                            )
+                            i += 4
+                        }
+                        else -> sb.append(s[i])
+                    }
+                } else {
+                    sb.append(c)
+                }
+                i++
+            }
+            expect('"')
+            return sb.toString()
+        }
+
+        private fun parseBoolean(): Boolean =
+                when {
+                    s.startsWith("true", i) -> {
+                        i += 4
+                        true
+                    }
+                    s.startsWith("false", i) -> {
+                        i += 5
+                        false
+                    }
+                    else -> throw IllegalArgumentException("invalid JSON: expected boolean")
+                }
+
+        private fun parseNull(): Any? {
+            if (s.startsWith("null", i)) {
+                i += 4
+                return null
+            }
+            throw IllegalArgumentException("invalid JSON: expected null")
+        }
+
+        private fun parseNumber(): Double {
+            val start = i
+            if (!atEnd() && s[i] == '-') i++
+            while (!atEnd() &&
+                    (s[i].isDigit() ||
+                            s[i] == '.' ||
+                            s[i] == 'e' ||
+                            s[i] == 'E' ||
+                            s[i] == '+' ||
+                            s[i] == '-')) {
+                i++
+            }
+            val numStr = s.substring(start, i)
+            return numStr.toDoubleOrNull()
+                    ?: throw IllegalArgumentException("invalid JSON: invalid number '$numStr'")
+        }
+    }
+
+    private fun stringifyValue(value: Any?, sb: StringBuilder) {
+        when (value) {
+            null -> sb.append("null")
+            is String -> appendJsonString(value, sb)
+            is Boolean -> sb.append(value.toString())
+            is Double ->
+                    // Render integral doubles without a trailing ".0" (matches Go and
+                    // the interpreter's own number formatting).
+                    if (!value.isInfinite() && !value.isNaN() && value == value.toLong().toDouble()) {
+                        sb.append(value.toLong().toString())
+                    } else {
+                        sb.append(value.toString())
+                    }
+            is Number -> sb.append(value.toString())
             is Map<*, *> -> {
-                val entries =
-                        value.entries.joinToString(",") { (k, v) -> "\"$k\":${stringifyValue(v)}" }
-                "{$entries}"
+                sb.append('{')
+                var first = true
+                for ((k, v) in value) {
+                    if (!first) sb.append(',')
+                    first = false
+                    appendJsonString(k.toString(), sb)
+                    sb.append(':')
+                    stringifyValue(v, sb)
+                }
+                sb.append('}')
             }
             is List<*> -> {
-                val items = value.joinToString(",") { stringifyValue(it) }
-                "[$items]"
+                sb.append('[')
+                var first = true
+                for (item in value) {
+                    if (!first) sb.append(',')
+                    first = false
+                    stringifyValue(item, sb)
+                }
+                sb.append(']')
             }
-            else -> "\"$value\""
+            else -> appendJsonString(value.toString(), sb)
         }
+    }
+
+    /** Appends a properly escaped JSON string literal (with surrounding quotes). */
+    private fun appendJsonString(s: String, sb: StringBuilder) {
+        sb.append('"')
+        for (c in s) {
+            when (c) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\t' -> sb.append("\\t")
+                '\r' -> sb.append("\\r")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
+            }
+        }
+        sb.append('"')
     }
 
     // ============ Date/Time functions ============

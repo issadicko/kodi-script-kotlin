@@ -28,6 +28,18 @@ data class Assignment(val token: Token, val name: Identifier, val value: Express
     override fun tokenLiteral(): String = token.literal
 }
 
+/** Array destructuring: let [a, b, c] = expr */
+data class ArrayDestructure(val token: Token, val names: List<Identifier>, val value: Expression) :
+        Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Object destructuring: let {a, b} = expr (binds keys a and b) */
+data class ObjectDestructure(val token: Token, val names: List<Identifier>, val value: Expression) :
+        Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
 /** Expression statement wraps an expression. */
 data class ExpressionStatement(val token: Token, val expression: Expression) : Statement {
     override fun tokenLiteral(): String = token.literal
@@ -69,6 +81,26 @@ data class ForStatement(
 /** While statement: while (condition) { body } */
 data class WhileStatement(val token: Token, val condition: Expression, val body: BlockStatement) :
         Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Try/catch statement: try { body } catch (e) { handler } */
+data class TryStatement(
+        val token: Token,
+        val body: BlockStatement,
+        val catchVar: Identifier?,
+        val catch: BlockStatement
+) : Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Break statement: break (exits the nearest enclosing loop). */
+data class BreakStatement(val token: Token) : Statement {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Continue statement: continue (skips to the next loop iteration). */
+data class ContinueStatement(val token: Token) : Statement {
     override fun tokenLiteral(): String = token.literal
 }
 
@@ -140,6 +172,21 @@ data class SafeAccessExpr(val token: Token, val obj: Expression, val property: I
 
 /** Elvis expression: expr ?: default */
 data class ElvisExpr(val token: Token, val left: Expression, val default: Expression) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Spread element: ...expr (inside array literals and call arguments). */
+data class SpreadExpr(val token: Token, val value: Expression) : Expression {
+    override fun tokenLiteral(): String = token.literal
+}
+
+/** Ternary conditional: condition ? consequent : alternative */
+data class TernaryExpr(
+        val token: Token,
+        val condition: Expression,
+        val consequent: Expression,
+        val alternative: Expression
+) : Expression {
     override fun tokenLiteral(): String = token.literal
 }
 

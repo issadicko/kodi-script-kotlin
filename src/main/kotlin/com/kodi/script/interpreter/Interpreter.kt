@@ -2,6 +2,8 @@ package com.kodi.script.interpreter
 
 import com.kodi.script.ast.*
 import com.kodi.script.natives.NativeFunctions
+import com.kodi.script.natives.kodiStringify
+import com.kodi.script.token.Token
 import kotlin.reflect.KCallable
 import kotlin.reflect.KClass
 import kotlin.reflect.full.memberFunctions
@@ -11,29 +13,30 @@ import kotlin.reflect.jvm.isAccessible
 /** Environment holds variable bindings. */
 class Environment(private val outer: Environment? = null) {
     private val store = mutableMapOf<String, Any?>()
-    private val output = mutableListOf<String>()
 
-    fun get(name: String): Pair<Any?, Boolean> {
+    /** Sentinel returned by [get] when a name is unbound (distinct from a null value). */
+    object NotFound
+
+    /** Returns the bound value, or [NotFound] if the name is not bound. */
+    fun get(name: String): Any? {
         val value = store[name]
-        if (value != null || store.containsKey(name)) {
-            return value to true
-        }
-        return outer?.get(name) ?: (null to false)
+        if (value != null || store.containsKey(name)) return value
+        return if (outer != null) outer.get(name) else NotFound
     }
 
     fun set(name: String, value: Any?) {
         store[name] = value
     }
-
-    fun addOutput(line: String) {
-        output.add(line)
-    }
-
-    fun getOutput(): List<String> = output
 }
 
 /** Wrapper to signal early return from evaluation. */
 class ReturnValue(val value: Any?)
+
+/** Signal to break out of the nearest enclosing loop. */
+object BreakSignal
+
+/** Signal to continue to the next iteration of the nearest loop. */
+object ContinueSignal
 
 /** Function value (user defined). */
 data class FunctionValue(
@@ -51,6 +54,20 @@ class MaxOperationsExceeded : RuntimeException("max operations exceeded")
 /** Exception thrown when execution timeout is exceeded. */
 class TimeoutException : RuntimeException("execution timeout")
 
+/** Runtime error carrying source position information. */
+class KodiRuntimeException(message: String, val line: Int = 0, val col: Int = 0) :
+        RuntimeException(if (line > 0) "line $line, col $col: $message" else message)
+
+/** Exception thrown when the function call-depth limit is exceeded. */
+class MaxCallDepthExceeded : RuntimeException("maximum call depth exceeded")
+
+/** Cached resolution of a reflective member access (method, property, or absent). */
+private sealed class ReflectMember {
+    class Method(val fn: KCallable<*>) : ReflectMember()
+    class Property(val prop: KCallable<*>) : ReflectMember()
+    object None : ReflectMember()
+}
+
 /** Interpreter evaluates AST nodes. */
 class Interpreter(
         private var env: Environment = Environment(),
@@ -59,8 +76,19 @@ class Interpreter(
     private var opCount: Long = 0
     private var maxOps: Long = 0 // 0 = unlimited
     private var deadline: Long = 0 // 0 = no timeout
+    private val output = mutableListOf<String>()
+    private var silent = false // when true, print() does not write to stdout
+    private var outputSink: ((String) -> Unit)? = null // when set, print() routes here
+    private var callDepth = 0 // current user-function call depth (recursion guard)
 
     companion object {
+        /** Maximum nested user-function call depth (recursion guard). */
+        const val MAX_CALL_DEPTH = 1000
+
+        /** Caches reflective member resolution per (class, name) — Kotlin reflection is costly. */
+        private val reflectCache =
+                java.util.concurrent.ConcurrentHashMap<Pair<KClass<*>, String>, ReflectMember>()
+
         fun withVariables(variables: Map<String, Any?>): Interpreter {
             val env = Environment()
             variables.forEach { (k, v) -> env.set(k, v) }
@@ -99,16 +127,31 @@ class Interpreter(
     fun eval(program: Program): Any? {
         var result: Any? = null
         for (stmt in program.statements) {
-            result = evalStatement(stmt)
+            val r = evalStatement(stmt)
             // Unwrap return values at top level
-            if (result is ReturnValue) {
-                return result.value
+            if (r is ReturnValue) {
+                return r.value
             }
+            // Ignore a stray break/continue used outside any loop
+            if (r === BreakSignal || r === ContinueSignal) {
+                continue
+            }
+            result = r
         }
         return result
     }
 
-    fun getOutput(): List<String> = env.getOutput()
+    fun getOutput(): List<String> = output
+
+    /** Controls whether print() writes to stdout. Output is always captured. */
+    fun setSilent(silent: Boolean) {
+        this.silent = silent
+    }
+
+    /** Routes print() output to [sink] instead of stdout. Output is still captured. */
+    fun setOutputSink(sink: (String) -> Unit) {
+        this.outputSink = sink
+    }
 
     private fun evalStatement(stmt: Statement): Any? {
         // Check operation limit at each statement
@@ -116,6 +159,51 @@ class Interpreter(
         // Check deadline at each statement
         checkDeadline()
 
+        return try {
+            evalStatementBody(stmt)
+        } catch (e: MaxOperationsExceeded) {
+            throw e
+        } catch (e: TimeoutException) {
+            throw e
+        } catch (e: KodiRuntimeException) {
+            throw e // already positioned (innermost statement wins)
+        } catch (e: RuntimeException) {
+            val tok = stmtToken(stmt)
+            throw KodiRuntimeException(e.message ?: "runtime error", tok.line, tok.column)
+        }
+    }
+
+    private fun stmtToken(stmt: Statement): Token =
+            when (stmt) {
+                is VarDecl -> stmt.token
+                is Assignment -> stmt.token
+                is ArrayDestructure -> stmt.token
+                is ObjectDestructure -> stmt.token
+                is ExpressionStatement -> stmt.token
+                is IfStatement -> stmt.token
+                is BlockStatement -> stmt.token
+                is ReturnStatement -> stmt.token
+                is ForStatement -> stmt.token
+                is WhileStatement -> stmt.token
+                is TryStatement -> stmt.token
+                is BreakStatement -> stmt.token
+                is ContinueStatement -> stmt.token
+            }
+
+    private fun evalTryStatement(stmt: TryStatement): Any? {
+        return try {
+            evalBlockStatement(stmt.body)
+        } catch (e: MaxOperationsExceeded) {
+            throw e // not catchable from script
+        } catch (e: TimeoutException) {
+            throw e // not catchable from script
+        } catch (e: RuntimeException) {
+            stmt.catchVar?.let { env.set(it.value, e.message ?: "runtime error") }
+            evalBlockStatement(stmt.catch)
+        }
+    }
+
+    private fun evalStatementBody(stmt: Statement): Any? {
         return when (stmt) {
             is VarDecl -> {
                 val value = evalExpression(stmt.value)
@@ -127,6 +215,25 @@ class Interpreter(
                 env.set(stmt.name.value, value)
                 value
             }
+            is ArrayDestructure -> {
+                val value = evalExpression(stmt.value)
+                val arr =
+                        value as? List<*>
+                                ?: throw RuntimeException("cannot destructure non-array value")
+                stmt.names.forEachIndexed { idx, name ->
+                    env.set(name.value, if (idx < arr.size) arr[idx] else null)
+                }
+                value
+            }
+            is ObjectDestructure -> {
+                val value = evalExpression(stmt.value)
+                @Suppress("UNCHECKED_CAST")
+                val m =
+                        value as? Map<String, Any?>
+                                ?: throw RuntimeException("cannot destructure non-object value")
+                stmt.names.forEach { name -> env.set(name.value, m[name.value]) }
+                value
+            }
             is ExpressionStatement -> evalExpression(stmt.expression)
             is IfStatement -> evalIfStatement(stmt)
             is BlockStatement -> evalBlockStatement(stmt)
@@ -136,6 +243,9 @@ class Interpreter(
             }
             is ForStatement -> evalForStatement(stmt)
             is WhileStatement -> evalWhileStatement(stmt)
+            is TryStatement -> evalTryStatement(stmt)
+            is BreakStatement -> BreakSignal
+            is ContinueStatement -> ContinueSignal
         }
     }
 
@@ -174,12 +284,13 @@ class Interpreter(
             // Execute body
             val value = evalBlockStatement(stmt.body)
 
-            // Check for return
-            if (value is ReturnValue) {
-                return value
+            // Handle return/break/continue signals
+            when {
+                value is ReturnValue -> return value
+                value === BreakSignal -> break
+                value === ContinueSignal -> continue
+                else -> result = value
             }
-
-            result = value
         }
 
         return result
@@ -205,12 +316,13 @@ class Interpreter(
             // Execute body
             val value = evalBlockStatement(stmt.body)
 
-            // Check for return
-            if (value is ReturnValue) {
-                return value
+            // Handle return/break/continue signals
+            when {
+                value is ReturnValue -> return value
+                value === BreakSignal -> break
+                value === ContinueSignal -> continue
+                else -> result = value
             }
-
-            result = value
         }
 
         return result
@@ -220,8 +332,8 @@ class Interpreter(
         var result: Any? = null
         for (stmt in block.statements) {
             result = evalStatement(stmt)
-            // Propagate return values up the call stack
-            if (result is ReturnValue) {
+            // Propagate return/break/continue signals up to the nearest handler
+            if (result is ReturnValue || result === BreakSignal || result === ContinueSignal) {
                 return result
             }
         }
@@ -231,12 +343,7 @@ class Interpreter(
     private fun evalStringTemplate(tmpl: StringTemplate): Any {
         val result = StringBuilder()
         for (part in tmpl.parts) {
-            val value = evalExpression(part)
-            if (value == null) {
-                result.append("null")
-            } else {
-                result.append(value.toString())
-            }
+            result.append(kodiStringify(evalExpression(part)))
         }
         return result.toString()
     }
@@ -249,8 +356,8 @@ class Interpreter(
             is BooleanLiteral -> expr.value
             is NullLiteral -> null
             is Identifier -> {
-                val (value, found) = env.get(expr.value)
-                if (found) return value
+                val value = env.get(expr.value)
+                if (value !== Environment.NotFound) return value
 
                 val native = natives.get(expr.value)
                 if (native != null) return NativeFunctionValue(native)
@@ -262,12 +369,34 @@ class Interpreter(
             is UnaryExpr -> evalUnaryExpr(expr)
             is SafeAccessExpr -> evalSafeAccess(expr)
             is ElvisExpr -> evalElvisExpr(expr)
+            is TernaryExpr ->
+                    if (isTruthy(evalExpression(expr.condition))) evalExpression(expr.consequent)
+                    else evalExpression(expr.alternative)
             is PropertyAccessExpr -> evalPropertyAccess(expr)
             is CallExpr -> evalCallExpr(expr)
-            is ArrayLiteral -> expr.elements.map { evalExpression(it) }
+            is ArrayLiteral -> evalElements(expr.elements)
             is ObjectLiteral -> expr.pairs.mapValues { evalExpression(it.value) }
             is IndexExpr -> evalIndexExpression(expr)
+            is SpreadExpr ->
+                    throw RuntimeException(
+                            "spread '...' is only valid inside arrays and call arguments"
+                    )
         }
+    }
+
+    /** Evaluates expressions, expanding any ...spread elements into the result. */
+    private fun evalElements(exprs: List<Expression>): List<Any?> {
+        val result = mutableListOf<Any?>()
+        for (el in exprs) {
+            if (el is SpreadExpr) {
+                val v = evalExpression(el.value)
+                if (v is List<*>) result.addAll(v)
+                else throw RuntimeException("spread operator requires an array")
+            } else {
+                result.add(evalExpression(el))
+            }
+        }
+        return result
     }
 
     private fun evalIndexExpression(expr: IndexExpr): Any? {
@@ -334,7 +463,7 @@ class Interpreter(
 
     private fun evalPlus(left: Any?, right: Any?): Any {
         if (left is String || right is String) {
-            return "${left ?: "null"}${right ?: "null"}"
+            return kodiStringify(left) + kodiStringify(right)
         }
         return toNumber(left) + toNumber(right)
     }
@@ -389,77 +518,136 @@ class Interpreter(
         return reflectivePropertyAccess(obj, expr.property.value)
     }
 
+    /**
+     * Built-in functions that need the interpreter itself (to capture output or
+     * to call back into user functions). Held in a table — rather than
+     * special-cased in [evalCallExpr] — so the dispatch is data-driven: adding a
+     * new one no longer touches the evaluator, and scripts/hosts can override
+     * them by name.
+     */
+    private val interpBuiltins: Map<String, (List<Any?>) -> Any?> by lazy {
+        mapOf(
+                "print" to ::builtinPrint,
+                "map" to ::builtinMap,
+                "filter" to ::builtinFilter,
+                "reduce" to ::builtinReduce,
+                "find" to ::builtinFind,
+                "findIndex" to ::builtinFindIndex,
+                "some" to ::builtinSome,
+                "every" to ::builtinEvery,
+                "flatMap" to ::builtinFlatMap
+        )
+    }
+
     private fun evalCallExpr(expr: CallExpr): Any? {
         val funcExpr = expr.function
-        // Special print handling
-        if (funcExpr is Identifier && funcExpr.value == "print") {
-            val args = expr.arguments.map { evalExpression(it) }
-            args.forEach {
-                val output = it?.toString() ?: "null"
-                println(output)
-                env.addOutput(output)
-            }
-            return null
+
+        // Method-call syntax: receiver.method(args)
+        if (funcExpr is PropertyAccessExpr) {
+            return evalMethodCall(funcExpr, expr.arguments)
         }
 
-        // Special handling for higher-order array functions
+        // Interpreter builtins (print, map, ...), unless overridden by a user
+        // binding or a registered native of the same name.
         if (funcExpr is Identifier) {
-            when (funcExpr.value) {
-                "map" -> return evalMapFunction(expr)
-                "filter" -> return evalFilterFunction(expr)
-                "reduce" -> return evalReduceFunction(expr)
-                "find" -> return evalFindFunction(expr)
-                "findIndex" -> return evalFindIndexFunction(expr)
+            val builtin = interpBuiltins[funcExpr.value]
+            if (builtin != null) {
+                val inEnv = env.get(funcExpr.value) !== Environment.NotFound
+                if (!inEnv && natives.get(funcExpr.value) == null) {
+                    return builtin(evalElements(expr.arguments))
+                }
             }
         }
 
         val function = evalExpression(funcExpr)
-        val args = expr.arguments.map { evalExpression(it) }
-
+        val args = evalElements(expr.arguments)
         return applyFunction(function, args)
     }
 
-    private fun evalMapFunction(expr: CallExpr): Any? {
-        if (expr.arguments.size < 2)
-                throw RuntimeException("map requires 2 arguments: array and function")
-        val arrVal = evalExpression(expr.arguments[0])
-        val arr = arrVal as? List<*> ?: return listOf<Any?>()
-        val fnVal = evalExpression(expr.arguments[1])
+    /** Implements method-call syntax: receiver.method(args). */
+    private fun evalMethodCall(pa: PropertyAccessExpr, argExprs: List<Expression>): Any? {
+        val receiver = evalExpression(pa.obj)
+        val method = pa.property.value
+        val args = evalElements(argExprs)
+
+        // 1. A callable stored under that key on an object wins (obj.fn())
+        if (receiver is Map<*, *>) {
+            @Suppress("UNCHECKED_CAST") val m = receiver as Map<String, Any?>
+            if (m.containsKey(method)) {
+                val v = m[method]
+                if (v is FunctionValue || v is NativeFunctionValue) {
+                    return applyFunction(v, args)
+                }
+            }
+        }
+
+        // 2. Interpreter builtin invoked as a method: prepend the receiver
+        interpBuiltins[method]?.let {
+            return it(listOf(receiver) + args)
+        }
+
+        // 3. Registry native invoked as a method: prepend the receiver
+        natives.get(method)?.let {
+            return it(listOf(receiver) + args)
+        }
+
+        // 4. Bound object: method/field via reflection
+        if (receiver == null) {
+            throw RuntimeException("cannot call method '$method' on null")
+        }
+        if (receiver !is Map<*, *>) {
+            return applyFunction(reflectivePropertyAccess(receiver, method), args)
+        }
+
+        throw RuntimeException("undefined method '$method'")
+    }
+
+    // ============ Interpreter builtins (need interpreter context) ============
+
+    private fun builtinPrint(args: List<Any?>): Any? {
+        args.forEach {
+            val line = kodiStringify(it)
+            val sink = outputSink
+            if (sink != null) sink(line) else if (!silent) println(line)
+            output.add(line)
+        }
+        return null
+    }
+
+    private fun builtinMap(args: List<Any?>): Any? {
+        if (args.size < 2) throw RuntimeException("map requires 2 arguments: array and function")
+        val arr = args[0] as? List<*> ?: return listOf<Any?>()
+        val fnVal = args[1]
         return arr.mapIndexed { idx, item -> applyFunction(fnVal, listOf(item, idx.toDouble())) }
     }
 
-    private fun evalFilterFunction(expr: CallExpr): Any? {
-        if (expr.arguments.size < 2)
-                throw RuntimeException("filter requires 2 arguments: array and function")
-        val arrVal = evalExpression(expr.arguments[0])
-        val arr = arrVal as? List<*> ?: return listOf<Any?>()
-        val fnVal = evalExpression(expr.arguments[1])
+    private fun builtinFilter(args: List<Any?>): Any? {
+        if (args.size < 2) throw RuntimeException("filter requires 2 arguments: array and function")
+        val arr = args[0] as? List<*> ?: return listOf<Any?>()
+        val fnVal = args[1]
         return arr.filterIndexed { idx, item ->
             isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))
         }
     }
 
-    private fun evalReduceFunction(expr: CallExpr): Any? {
-        if (expr.arguments.size < 3)
+    private fun builtinReduce(args: List<Any?>): Any? {
+        if (args.size < 3)
                 throw RuntimeException(
                         "reduce requires 3 arguments: array, function, and initial value"
                 )
-        val arrVal = evalExpression(expr.arguments[0])
-        val arr = arrVal as? List<*> ?: return null
-        val fnVal = evalExpression(expr.arguments[1])
-        var accumulator = evalExpression(expr.arguments[2])
+        val arr = args[0] as? List<*> ?: return null
+        val fnVal = args[1]
+        var accumulator = args[2]
         arr.forEachIndexed { idx, item ->
             accumulator = applyFunction(fnVal, listOf(accumulator, item, idx.toDouble()))
         }
         return accumulator
     }
 
-    private fun evalFindFunction(expr: CallExpr): Any? {
-        if (expr.arguments.size < 2)
-                throw RuntimeException("find requires 2 arguments: array and function")
-        val arrVal = evalExpression(expr.arguments[0])
-        val arr = arrVal as? List<*> ?: return null
-        val fnVal = evalExpression(expr.arguments[1])
+    private fun builtinFind(args: List<Any?>): Any? {
+        if (args.size < 2) throw RuntimeException("find requires 2 arguments: array and function")
+        val arr = args[0] as? List<*> ?: return null
+        val fnVal = args[1]
         arr.forEachIndexed { idx, item ->
             if (isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))) {
                 return item
@@ -468,12 +656,11 @@ class Interpreter(
         return null
     }
 
-    private fun evalFindIndexFunction(expr: CallExpr): Any? {
-        if (expr.arguments.size < 2)
+    private fun builtinFindIndex(args: List<Any?>): Any? {
+        if (args.size < 2)
                 throw RuntimeException("findIndex requires 2 arguments: array and function")
-        val arrVal = evalExpression(expr.arguments[0])
-        val arr = arrVal as? List<*> ?: return -1.0
-        val fnVal = evalExpression(expr.arguments[1])
+        val arr = args[0] as? List<*> ?: return -1.0
+        val fnVal = args[1]
         arr.forEachIndexed { idx, item ->
             if (isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))) {
                 return idx.toDouble()
@@ -482,9 +669,43 @@ class Interpreter(
         return -1.0
     }
 
+    private fun builtinSome(args: List<Any?>): Any? {
+        if (args.size < 2) throw RuntimeException("some requires 2 arguments: array and function")
+        val arr = args[0] as? List<*> ?: return false
+        val fnVal = args[1]
+        arr.forEachIndexed { idx, item ->
+            if (isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))) return true
+        }
+        return false
+    }
+
+    private fun builtinEvery(args: List<Any?>): Any? {
+        if (args.size < 2) throw RuntimeException("every requires 2 arguments: array and function")
+        val arr = args[0] as? List<*> ?: return true
+        val fnVal = args[1]
+        arr.forEachIndexed { idx, item ->
+            if (!isTruthy(applyFunction(fnVal, listOf(item, idx.toDouble())))) return false
+        }
+        return true
+    }
+
+    private fun builtinFlatMap(args: List<Any?>): Any? {
+        if (args.size < 2) throw RuntimeException("flatMap requires 2 arguments: array and function")
+        val arr = args[0] as? List<*> ?: return listOf<Any?>()
+        val fnVal = args[1]
+        val result = mutableListOf<Any?>()
+        arr.forEachIndexed { idx, item ->
+            val v = applyFunction(fnVal, listOf(item, idx.toDouble()))
+            if (v is List<*>) result.addAll(v) else result.add(v)
+        }
+        return result
+    }
+
     private fun applyFunction(fn: Any?, args: List<Any?>): Any? {
         return when (fn) {
             is FunctionValue -> {
+                if (callDepth >= MAX_CALL_DEPTH) throw MaxCallDepthExceeded()
+                callDepth++
                 val extendedEnv = Environment(fn.env)
                 for ((idx, param) in fn.parameters.withIndex()) {
                     if (idx < args.size) {
@@ -496,9 +717,15 @@ class Interpreter(
                 this.env = extendedEnv
                 try {
                     val result = evalBlockStatement(fn.body)
-                    if (result is ReturnValue) result.value else result
+                    when {
+                        result is ReturnValue -> result.value
+                        // A stray break/continue must not escape the function as a value.
+                        result === BreakSignal || result === ContinueSignal -> null
+                        else -> result
+                    }
                 } finally {
                     this.env = previousEnv
+                    callDepth--
                 }
             }
             is NativeFunctionValue -> fn.fn(args)
@@ -528,23 +755,33 @@ class Interpreter(
     private fun reflectivePropertyAccess(obj: Any, propertyName: String): Any? {
         val kClass = obj::class
 
-        // Try to find a method first (methods have priority over properties)
-        val method = kClass.memberFunctions.find { it.name == propertyName }
-        if (method != null) {
-            // Return a callable wrapper
-            return NativeFunctionValue { args -> callReflectedMethod(obj, method, args) }
-        }
+        // Resolve (and cache) how this name binds on this class. Methods have
+        // priority over properties.
+        val member =
+                reflectCache.getOrPut(kClass to propertyName) {
+                    val method = kClass.memberFunctions.find { it.name == propertyName }
+                    if (method != null) {
+                        ReflectMember.Method(method)
+                    } else {
+                        val property = kClass.memberProperties.find { it.name == propertyName }
+                        if (property != null) {
+                            property.isAccessible = true
+                            ReflectMember.Property(property)
+                        } else {
+                            ReflectMember.None
+                        }
+                    }
+                }
 
-        // Try to access a property
-        val property = kClass.memberProperties.find { it.name == propertyName }
-        if (property != null) {
-            property.isAccessible = true
-            return convertFromKotlinType(property.call(obj))
+        return when (member) {
+            is ReflectMember.Method ->
+                    NativeFunctionValue { args -> callReflectedMethod(obj, member.fn, args) }
+            is ReflectMember.Property -> convertFromKotlinType(member.prop.call(obj))
+            ReflectMember.None ->
+                    throw RuntimeException(
+                            "property or method '$propertyName' not found on ${kClass.simpleName}"
+                    )
         }
-
-        throw RuntimeException(
-                "property or method '$propertyName' not found on ${kClass.simpleName}"
-        )
     }
 
     /** Calls a Kotlin method via reflection with argument type conversion. */

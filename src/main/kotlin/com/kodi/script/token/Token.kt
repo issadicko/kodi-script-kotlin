@@ -21,6 +21,14 @@ enum class TokenType {
         SLASH, // /
         PERCENT, // %
 
+        // Compound assignment and increment/decrement
+        PLUS_EQ, // +=
+        MINUS_EQ, // -=
+        ASTERISK_EQ, // *=
+        SLASH_EQ, // /=
+        PLUS_PLUS, // ++
+        MINUS_MINUS, // --
+
         // Comparison
         EQ, // ==
         NOT_EQ, // !=
@@ -37,6 +45,7 @@ enum class TokenType {
         // Null-safety
         SAFE_ACCESS, // ?.
         ELVIS, // ?:
+        QUESTION, // ? (ternary)
 
         // Delimiters
         COMMA, // ,
@@ -49,6 +58,7 @@ enum class TokenType {
         LBRACKET, // [
         RBRACKET, // ]
         DOT, // .
+        ELLIPSIS, // ... (spread / rest)
 
         // Keywords
         LET,
@@ -61,12 +71,23 @@ enum class TokenType {
         FOR,
         IN,
         FN,
-        WHILE;
+        WHILE,
+        BREAK,
+        CONTINUE,
+        TRY,
+        CATCH;
 
         /** Returns true if this token type can end a statement (for ASI). */
-        fun canEndStatement(): Boolean =
-                this in
-                        setOf(
+        fun canEndStatement(): Boolean = this in STATEMENT_ENDERS
+
+        companion object {
+                /**
+                 * Token types that can terminate a statement (for Automatic Semicolon
+                 * Insertion). Stored as a static EnumSet so the lexer's per-newline
+                 * check is allocation-free.
+                 */
+                private val STATEMENT_ENDERS =
+                        java.util.EnumSet.of(
                                 IDENT,
                                 NUMBER,
                                 STRING,
@@ -76,31 +97,13 @@ enum class TokenType {
                                 NULL,
                                 RPAREN,
                                 RBRACE,
-                                RBRACKET
+                                RBRACKET,
+                                PLUS_PLUS,
+                                MINUS_MINUS,
+                                BREAK,
+                                CONTINUE
                         )
-
-        /** Returns true if this token type indicates statement continuation. */
-        fun isOperatorContinuation(): Boolean =
-                this in
-                        setOf(
-                                PLUS,
-                                MINUS,
-                                ASTERISK,
-                                SLASH,
-                                PERCENT,
-                                AND,
-                                OR,
-                                EQ,
-                                NOT_EQ,
-                                LT,
-                                GT,
-                                LT_EQ,
-                                GT_EQ,
-                                SAFE_ACCESS,
-                                ELVIS,
-                                DOT,
-                                COMMA
-                        )
+        }
 }
 
 /** Represents a single token with type, value, and position. */
@@ -118,7 +121,11 @@ data class Token(val type: TokenType, val literal: String, val line: Int = 1, va
                                 "for" to TokenType.FOR,
                                 "in" to TokenType.IN,
                                 "fn" to TokenType.FN,
-                                "while" to TokenType.WHILE
+                                "while" to TokenType.WHILE,
+                                "break" to TokenType.BREAK,
+                                "continue" to TokenType.CONTINUE,
+                                "try" to TokenType.TRY,
+                                "catch" to TokenType.CATCH
                         )
 
                 /** Looks up an identifier to check if it's a keyword. */

@@ -107,7 +107,7 @@ class BindingTest {
 
         val result = KodiScript.builder(script).bind("user", user).bind("calc", calc).execute()
 
-        assertEquals("Hello, I'm Grace 8.0", result.value)
+        assertEquals("Hello, I'm Grace 8", result.value)
     }
 
     @Test

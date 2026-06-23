@@ -45,6 +45,7 @@ class Parser(private val lexer: Lexer) {
         infixParseFns[TokenType.AND] = ::parseInfixExpression
         infixParseFns[TokenType.OR] = ::parseInfixExpression
         infixParseFns[TokenType.ELVIS] = ::parseElvisExpression
+        infixParseFns[TokenType.QUESTION] = ::parseTernaryExpression
         infixParseFns[TokenType.DOT] = ::parsePropertyAccess
         infixParseFns[TokenType.SAFE_ACCESS] = ::parseSafeAccess
         infixParseFns[TokenType.LPAREN] = ::parseCallExpression
@@ -116,11 +117,58 @@ class Parser(private val lexer: Lexer) {
             TokenType.RETURN -> parseReturnStatement()
             TokenType.FOR -> parseForStatement()
             TokenType.WHILE -> parseWhileStatement()
-            TokenType.IDENT -> {
-                if (peekTokenIs(TokenType.ASSIGN)) parseAssignment() else parseExpressionStatement()
-            }
+            TokenType.TRY -> parseTryStatement()
+            TokenType.BREAK -> BreakStatement(curToken)
+            TokenType.CONTINUE -> ContinueStatement(curToken)
+            TokenType.FN ->
+                    if (peekTokenIs(TokenType.IDENT)) parseFunctionDeclaration()
+                    else parseExpressionStatement()
+            TokenType.IDENT ->
+                    when (peekToken.type) {
+                        TokenType.ASSIGN -> parseAssignment()
+                        TokenType.PLUS_EQ,
+                        TokenType.MINUS_EQ,
+                        TokenType.ASTERISK_EQ,
+                        TokenType.SLASH_EQ -> parseCompoundAssignment()
+                        TokenType.PLUS_PLUS,
+                        TokenType.MINUS_MINUS -> parseIncDec()
+                        else -> parseExpressionStatement()
+                    }
             else -> parseExpressionStatement()
         }
+    }
+
+    private fun parseCompoundAssignment(): Assignment? {
+        val token = curToken
+        val name = Identifier(curToken, curToken.literal)
+
+        nextToken() // move onto the compound-assign operator
+        val opToken = curToken
+        val op =
+                when (opToken.type) {
+                    TokenType.PLUS_EQ -> "+"
+                    TokenType.MINUS_EQ -> "-"
+                    TokenType.ASTERISK_EQ -> "*"
+                    TokenType.SLASH_EQ -> "/"
+                    else -> return null
+                }
+
+        nextToken() // move onto the right-hand expression
+        val right = parseExpression(LOWEST) ?: return null
+
+        return Assignment(token, name, BinaryExpr(opToken, name, op, right))
+    }
+
+    private fun parseIncDec(): Assignment {
+        val token = curToken
+        val name = Identifier(curToken, curToken.literal)
+
+        nextToken() // move onto ++ / -- ; caller advances past it
+        val opToken = curToken
+        val op = if (opToken.type == TokenType.MINUS_MINUS) "-" else "+"
+
+        val one = NumberLiteral(Token(TokenType.NUMBER, "1"), 1.0)
+        return Assignment(token, name, BinaryExpr(opToken, name, op, one))
     }
 
     private fun parseReturnStatement(): ReturnStatement {
@@ -169,6 +217,29 @@ class Parser(private val lexer: Lexer) {
         return ForStatement(token, variable, iterable, body)
     }
 
+    private fun parseTryStatement(): Statement? {
+        val token = curToken
+        if (!expectPeek(TokenType.LBRACE)) return null
+        val body = parseBlockStatement()
+
+        // Allow a newline between the try block's `}` and `catch`.
+        while (peekTokenIs(TokenType.NEWLINE)) nextToken()
+        if (!expectPeek(TokenType.CATCH)) return null
+
+        var catchVar: Identifier? = null
+        if (peekTokenIs(TokenType.LPAREN)) {
+            nextToken() // cur = (
+            if (!expectPeek(TokenType.IDENT)) return null
+            catchVar = Identifier(curToken, curToken.literal)
+            if (!expectPeek(TokenType.RPAREN)) return null
+        }
+
+        if (!expectPeek(TokenType.LBRACE)) return null
+        val catch = parseBlockStatement()
+
+        return TryStatement(token, body, catchVar, catch)
+    }
+
     private fun parseWhileStatement(): WhileStatement? {
         val token = curToken
 
@@ -191,8 +262,16 @@ class Parser(private val lexer: Lexer) {
         return WhileStatement(token, condition, body)
     }
 
-    private fun parseVarDecl(): VarDecl? {
+    private fun parseVarDecl(): Statement? {
         val token = curToken
+
+        // Destructuring: let [a, b] = expr  /  let {a, b} = expr
+        if (peekTokenIs(TokenType.LBRACKET)) {
+            return parseDestructure(token, TokenType.RBRACKET, isArray = true)
+        }
+        if (peekTokenIs(TokenType.LBRACE)) {
+            return parseDestructure(token, TokenType.RBRACE, isArray = false)
+        }
 
         if (!expectPeek(TokenType.IDENT)) return null
         val name = Identifier(curToken, curToken.literal)
@@ -203,6 +282,26 @@ class Parser(private val lexer: Lexer) {
         val value = parseExpression(LOWEST) ?: return null
 
         return VarDecl(token, name, value)
+    }
+
+    private fun parseDestructure(token: Token, close: TokenType, isArray: Boolean): Statement? {
+        nextToken() // cur = opening [ or {
+        val names = mutableListOf<Identifier>()
+        if (!peekTokenIs(close)) {
+            if (!expectPeek(TokenType.IDENT)) return null
+            names.add(Identifier(curToken, curToken.literal))
+            while (peekTokenIs(TokenType.COMMA)) {
+                nextToken()
+                if (!expectPeek(TokenType.IDENT)) return null
+                names.add(Identifier(curToken, curToken.literal))
+            }
+        }
+        if (!expectPeek(close)) return null
+        if (!expectPeek(TokenType.ASSIGN)) return null
+        nextToken()
+        val value = parseExpression(LOWEST) ?: return null
+        return if (isArray) ArrayDestructure(token, names, value)
+        else ObjectDestructure(token, names, value)
     }
 
     private fun parseAssignment(): Assignment? {
@@ -232,9 +331,16 @@ class Parser(private val lexer: Lexer) {
 
         var alternative: BlockStatement? = null
         if (peekTokenIs(TokenType.ELSE)) {
-            nextToken()
-            if (!expectPeek(TokenType.LBRACE)) return null
-            alternative = parseBlockStatement()
+            nextToken() // cur = else
+            if (peekTokenIs(TokenType.IF)) {
+                // else if: parse the nested if and wrap it as the alternative block
+                nextToken() // cur = if
+                val nested = parseIfStatement() ?: return null
+                alternative = BlockStatement(curToken, mutableListOf(nested))
+            } else {
+                if (!expectPeek(TokenType.LBRACE)) return null
+                alternative = parseBlockStatement()
+            }
         }
 
         return IfStatement(token, condition, consequence, alternative)
@@ -386,12 +492,12 @@ class Parser(private val lexer: Lexer) {
         }
 
         nextToken()
-        parseExpression(LOWEST)?.let { list.add(it) }
+        parseListElement()?.let { list.add(it) }
 
         while (peekTokenIs(TokenType.COMMA)) {
             nextToken()
             nextToken()
-            parseExpression(LOWEST)?.let { list.add(it) }
+            parseListElement()?.let { list.add(it) }
         }
 
         if (!expectPeek(end)) {
@@ -399,6 +505,17 @@ class Parser(private val lexer: Lexer) {
         }
 
         return list
+    }
+
+    /** Parses one array/argument element, allowing a spread element (...expr). */
+    private fun parseListElement(): Expression? {
+        if (curTokenIs(TokenType.ELLIPSIS)) {
+            val token = curToken
+            nextToken()
+            val value = parseExpression(LOWEST) ?: return null
+            return SpreadExpr(token, value)
+        }
+        return parseExpression(LOWEST)
     }
 
     private fun parseObjectLiteral(): Expression? {
@@ -485,6 +602,16 @@ class Parser(private val lexer: Lexer) {
         return ElvisExpr(token, left, default)
     }
 
+    private fun parseTernaryExpression(condition: Expression): Expression? {
+        val token = curToken
+        nextToken() // move onto the consequent
+        val consequent = parseExpression(LOWEST) ?: return null
+        if (!expectPeek(TokenType.COLON)) return null
+        nextToken() // move onto the alternative
+        val alternative = parseExpression(LOWEST) ?: return null
+        return TernaryExpr(token, condition, consequent, alternative)
+    }
+
     private fun parsePropertyAccess(left: Expression): Expression? {
         val token = curToken
         if (!expectPeek(TokenType.IDENT)) return null
@@ -497,6 +624,21 @@ class Parser(private val lexer: Lexer) {
         if (!expectPeek(TokenType.IDENT)) return null
         val property = Identifier(curToken, curToken.literal)
         return SafeAccessExpr(token, left, property)
+    }
+
+    /**
+     * Desugars `fn name(a, b) { ... }` into `let name = fn(a, b) { ... }`.
+     * Binding the name in the enclosing scope is what makes recursion work.
+     */
+    private fun parseFunctionDeclaration(): Statement? {
+        val fnToken = curToken
+        if (!expectPeek(TokenType.IDENT)) return null
+        val name = Identifier(curToken, curToken.literal)
+        if (!expectPeek(TokenType.LPAREN)) return null
+        val parameters = parseFunctionParameters() ?: return null
+        if (!expectPeek(TokenType.LBRACE)) return null
+        val body = parseBlockStatement()
+        return VarDecl(fnToken, name, FunctionLiteral(fnToken, parameters, body))
     }
 
     private fun parseFunctionLiteral(): Expression? {
@@ -545,12 +687,12 @@ class Parser(private val lexer: Lexer) {
         }
 
         nextToken()
-        args.add(parseExpression(LOWEST) ?: return null)
+        args.add(parseListElement() ?: return null)
 
         while (peekTokenIs(TokenType.COMMA)) {
             nextToken()
             nextToken()
-            args.add(parseExpression(LOWEST) ?: return null)
+            args.add(parseListElement() ?: return null)
         }
 
         if (!expectPeek(TokenType.RPAREN)) return null
@@ -560,19 +702,21 @@ class Parser(private val lexer: Lexer) {
 
     companion object {
         private const val LOWEST = 1
-        private const val ELVIS = 2
-        private const val OR = 3
-        private const val AND = 4
-        private const val EQUALS = 5
-        private const val LESSGREATER = 6
-        private const val SUM = 7
-        private const val PRODUCT = 8
-        private const val PREFIX = 9
-        private const val CALL = 10
-        private const val ACCESS = 11
+        private const val TERNARY = 2
+        private const val ELVIS = 3
+        private const val OR = 4
+        private const val AND = 5
+        private const val EQUALS = 6
+        private const val LESSGREATER = 7
+        private const val SUM = 8
+        private const val PRODUCT = 9
+        private const val PREFIX = 10
+        private const val CALL = 11
+        private const val ACCESS = 12
 
         private val precedences =
                 mapOf(
+                        TokenType.QUESTION to TERNARY,
                         TokenType.ELVIS to ELVIS,
                         TokenType.OR to OR,
                         TokenType.AND to AND,
